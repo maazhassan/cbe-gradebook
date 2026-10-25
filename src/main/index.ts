@@ -1,6 +1,7 @@
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BrowserWindow, Menu, app, dialog, session } from 'electron'
+import icon from '../../build/icon.png?asset'
 import { AppError, userVersion } from './db/connection'
 import { listAutomaticBackups, timestamp } from './db/backup'
 import { DbHolder } from './db/holder'
@@ -110,7 +111,7 @@ function buildHandlers(): Handlers {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1360, height: 860, minWidth: 960, minHeight: 600, show: false,
-    title: 'CBE Gradebook',
+    title: 'CBE Gradebook', icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true
