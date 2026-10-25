@@ -1,6 +1,6 @@
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BrowserWindow, app, dialog, session } from 'electron'
+import { BrowserWindow, Menu, app, dialog, session } from 'electron'
 import { AppError, userVersion } from './db/connection'
 import { listAutomaticBackups, timestamp } from './db/backup'
 import { DbHolder } from './db/holder'
@@ -148,6 +148,9 @@ else {
 
   void app.whenReady().then(() => {
     lockDownNetwork()
+    // No File/Edit/View/Window bar in the packaged app. Kept in dev (reload, DevTools) and on macOS, where the menu
+    // lives in the system bar and is needed for Cmd+C/V/Q.
+    if (!isDev && process.platform !== 'darwin') Menu.setApplicationMenu(null)
     const dir = app.getPath('userData')
     holder = new DbHolder(join(dir, 'gradebook.sqlite'), join(dir, 'backups'))
     try {
