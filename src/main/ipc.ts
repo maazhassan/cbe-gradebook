@@ -56,7 +56,11 @@ export const schemas = {
   createBackup: z.tuple([]),
   restoreBackup: z.tuple([]),
   saveTextFile: z.tuple([z.object({ defaultName: text(200), content: text(20_000_000) })]),
-  pickRosterFile: z.tuple([])
+  pickRosterFile: z.tuple([]),
+  armTypingMacro: z.tuple([
+    z.object({ values: z.array(z.string().regex(/^(\d+(\.\d+)?|MI|EX|IN)$/)).max(1000), label: name })
+  ]),
+  disarmTypingMacro: z.tuple([])
 } satisfies Record<ApiMethod, z.ZodType>
 
 export type Handlers = { [K in ApiMethod]: (...args: Parameters<Api[K]>) => ReturnType<Api[K]> | Awaited<ReturnType<Api[K]>> }

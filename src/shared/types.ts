@@ -122,6 +122,18 @@ export interface RosterImportResult {
   enrolments: number
 }
 
+export interface MacroArmed {
+  accelerator: string
+  /** Epoch milliseconds. */
+  expiresAt: number
+  count: number
+}
+
+export type MacroEvent =
+  | { kind: 'done'; label: string; count: number }
+  | { kind: 'expired'; label: string }
+  | { kind: 'error'; label: string; message: string }
+
 export type FileResult = { saved: true; path: string } | { saved: false }
 export type RestoreResult = { restored: true; path: string } | { restored: false }
 export type PickedFile = { name: string; text: string } | null
@@ -163,6 +175,10 @@ export interface Api {
   restoreBackup(): Promise<RestoreResult>
   saveTextFile(input: { defaultName: string; content: string }): Promise<FileResult>
   pickRosterFile(): Promise<PickedFile>
+
+  /** Load values to type into another app when the global hotkey is pressed. Replaces any previously armed column. */
+  armTypingMacro(input: { values: string[]; label: string }): Promise<MacroArmed>
+  disarmTypingMacro(): Promise<void>
 }
 
 export type ApiMethod = keyof Api
@@ -173,7 +189,8 @@ export const API_METHODS: readonly ApiMethod[] = [
   'listStudents', 'getStudent', 'createStudent', 'updateStudent', 'setStudentArchived',
   'updateStudentComments', 'setEnrollment', 'importRoster',
   'getGradebook', 'createAssignment', 'updateAssignment', 'archiveAssignment', 'setRawScore', 'enrollStudents',
-  'getStudentDashboard', 'createBackup', 'restoreBackup', 'saveTextFile', 'pickRosterFile'
+  'getStudentDashboard', 'createBackup', 'restoreBackup', 'saveTextFile', 'pickRosterFile',
+  'armTypingMacro', 'disarmTypingMacro'
 ]
 
 export type ApiEnvelope<T> = { ok: true; data: T } | { ok: false; error: string }

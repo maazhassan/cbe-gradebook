@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { API_METHODS } from '@shared/types'
-import type { Api, ApiEnvelope } from '@shared/types'
+import type { Api, ApiEnvelope, MacroEvent } from '@shared/types'
 
 // Only the named operations in API_METHODS are exposed; there is no generic invoke or SQL access.
 const api = Object.fromEntries(
@@ -15,3 +15,10 @@ const api = Object.fromEntries(
 ) as unknown as Api
 
 contextBridge.exposeInMainWorld('api', api)
+
+// Push notifications from the typing macro (finished, expired, failed). Returns an unsubscribe function.
+contextBridge.exposeInMainWorld('onMacroEvent', (listener: (event: MacroEvent) => void) => {
+  const handler = (_e: unknown, event: MacroEvent) => listener(event)
+  ipcRenderer.on('macro:event', handler)
+  return () => void ipcRenderer.removeListener('macro:event', handler)
+})

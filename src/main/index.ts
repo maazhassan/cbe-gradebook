@@ -1,11 +1,12 @@
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BrowserWindow, Menu, app, dialog, session } from 'electron'
+import { BrowserWindow, Menu, app, dialog, globalShortcut, session } from 'electron'
 import icon from '../../build/icon.png?asset'
 import { AppError, userVersion } from './db/connection'
 import { listAutomaticBackups, timestamp } from './db/backup'
 import { DbHolder } from './db/holder'
 import { registerIpc } from './ipc'
+import { armMacro, cancelMacro, prepareLinuxGlobalShortcuts } from './macro'
 import type { Handlers } from './ipc'
 import * as stems from './services/stems'
 import * as courses from './services/courses'
@@ -104,7 +105,12 @@ function buildHandlers(): Handlers {
       if (picked.canceled || !file) return null
       if (statSync(file).size > 5_000_000) throw new AppError('That file is too large to be a class roster.')
       return { name: file.split(/[\\/]/).pop() ?? file, text: readFileSync(file, 'utf8') }
-    }
+    },
+    armTypingMacro: ({ values, label }) => {
+      if (!mainWindow) throw new AppError('The gradebook window is not open.')
+      return armMacro(values, label, mainWindow.webContents)
+    },
+    disarmTypingMacro: () => cancelMacro()
   }
 }
 
@@ -136,6 +142,8 @@ function lockDownNetwork(): void {
     callback({ cancel: !local })
   })
 }
+
+prepareLinuxGlobalShortcuts()
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
@@ -170,6 +178,10 @@ else {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
+  })
+  app.on('will-quit', () => {
+    cancelMacro()
+    globalShortcut.unregisterAll()
   })
   app.on('before-quit', () => {
     try {

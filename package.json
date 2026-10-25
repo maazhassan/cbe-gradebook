@@ -53,6 +53,12 @@
     ],
     "mac": {
       "category": "public.app-category.education",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "CBE Gradebook uses System Events to type a column of grades into another app (such as PowerSchool in your browser) when you press the hotkey."
+      },
       "target": [
         "dmg",
         "zip"

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { powerSchoolCsv, rawScoresCsv, stemAveragesCsv } from '@shared/export'
 import type { AverageDecimals, Score } from '@shared/grading'
-import type { GradebookAssignment } from '@shared/types'
+import type { GradebookAssignment, MacroArmed } from '@shared/types'
 import type { Navigate } from '../App'
 import { AssignmentDialog } from '../components/AssignmentDialog'
 import { EnrolDialog } from '../components/EnrolDialog'
 import { PowerSchoolGrid, RawScoresGrid, StemAveragesGrid } from '../components/Grids'
+import type { MacroControls } from '../components/Grids'
 import { useStatus } from '../components/Status'
 import { errorMessage, useLoad } from '../hooks'
 
@@ -17,6 +18,59 @@ const TABS: { id: Tab; label: string }[] = [
 ]
 const LAST_COURSE = 'gradebook.lastCourse'
 
+const isMac = navigator.userAgent.includes('Mac')
+/** "CommandOrControl+Alt+Shift+G" -> "⌘⌥⇧G" on macOS, "Ctrl+Alt+Shift+G" elsewhere. */
+const showAccelerator = (acc: string): string =>
+  isMac
+    ? acc.replace('CommandOrControl', '⌘').replace('Alt', '⌥').replace('Shift', '⇧').replace(/\+/g, '')
+    : acc.replace('CommandOrControl', 'Ctrl')
+
+type ArmedMacro = MacroArmed & { key: string; label: string }
+
+/** Arms the typing macro in the main process and tracks it until it fires, expires or is cancelled. */
+function useTypingMacro(status: ReturnType<typeof useStatus>): { armed: ArmedMacro | null; controls: MacroControls; secondsLeft: number } {
+  const [armed, setArmed] = useState<ArmedMacro | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(
+    () =>
+      window.onMacroEvent((e) => {
+        setArmed(null)
+        if (e.kind === 'done') status.notify(`Typed ${e.count} value${e.count === 1 ? '' : 's'} for ${e.label}.`)
+        else if (e.kind === 'expired') status.notify(`Hotkey for ${e.label} expired. Click Type again to re-arm.`)
+        else status.fail(e.message)
+      }),
+    [status]
+  )
+
+  // Leaving the gradebook cancels any armed column.
+  useEffect(() => () => void window.api.disarmTypingMacro().catch(() => {}), [])
+
+  useEffect(() => {
+    if (!armed) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [armed])
+
+  const controls: MacroControls = {
+    armedKey: armed?.key ?? null,
+    onArm: (key, label, values) => {
+      window.api
+        .armTypingMacro({ values, label })
+        .then((r) => {
+          setNow(Date.now())
+          setArmed({ ...r, key, label })
+        })
+        .catch((e: unknown) => status.fail(errorMessage(e)))
+    },
+    onCancel: () => {
+      setArmed(null)
+      void window.api.disarmTypingMacro().catch((e: unknown) => status.fail(errorMessage(e)))
+    }
+  }
+  return { armed, controls, secondsLeft: armed ? Math.max(0, Math.ceil((armed.expiresAt - now) / 1000)) : 0 }
+}
+
 export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?: number; navigate: Navigate }) {
   const status = useStatus()
   const courses = useLoad(() => window.api.listCourses(), [])
@@ -25,6 +79,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const [editing, setEditing] = useState<GradebookAssignment | 'new' | null>(null)
   const [enrolling, setEnrolling] = useState(false)
   const [decimals, setDecimals] = useState<AverageDecimals>(2)
+  const macro = useTypingMacro(status)
 
   useEffect(() => {
     const list = courses.data
@@ -129,6 +184,15 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
         </div>
       )}
       {tab === 'stems' && <p className="tab-note">Read-only. Weighted average of PowerSchool grades per stem (weights are relative); ungraded and exempt work is ignored, missing counts as 0, and blank means nothing graded yet. The CSV export includes both the 2-decimal and the rounded value for each stem.</p>}
+      {macro.armed && (tab === 'raw' || tab === 'ps') && (
+        <p className="banner macro-banner" role="status">
+          <span>
+            <strong>{macro.armed.label}</strong>: {macro.armed.count} values loaded. Click the first field in the browser, then press{' '}
+            <kbd>{showAccelerator(macro.armed.accelerator)}</kbd> and let go. Expires in {macro.secondsLeft}s.
+          </span>
+          <button onClick={macro.controls.onCancel}>Cancel</button>
+        </p>
+      )}
       {readOnly && <p className="banner">This course is archived, so it is read-only. Reactivate it in Courses to make changes.</p>}
 
       {book.error && <p className="field-error" role="alert">{book.error}</p>}
@@ -147,8 +211,8 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
       )}
       {gb && gb.students.length > 0 && (gb.assignments.length > 0 || tab === 'stems') && (
         <>
-          {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} />}
-          {tab === 'ps' && <PowerSchoolGrid gb={gb} />}
+          {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} macro={macro.controls} />}
+          {tab === 'ps' && <PowerSchoolGrid gb={gb} macro={macro.controls} />}
           {tab === 'stems' && <StemAveragesGrid gb={gb} decimals={decimals} />}
         </>
       )}

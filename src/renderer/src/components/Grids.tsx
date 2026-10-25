@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   ScoreIndex, formatAverage, formatDueDate, formatGrade, formatNumber, formatScore, parseScoreInput, stemAveragesForStudent, toPowerSchoolGrade
 } from '@shared/grading'
@@ -39,7 +40,32 @@ const assignmentCols = (gb: CourseGradebook) => [
 
 const fullName = (s: { firstName: string; lastName: string }): string => `${s.lastName}, ${s.firstName}`
 
-function AssignmentHeader({ gb, a, empty, onEdit, widths }: { gb: CourseGradebook; a: GradebookAssignment; empty?: number; onEdit?: (a: GradebookAssignment) => void; widths: ColumnWidths }) {
+/** Arming state for the "type this column into another app" macro, shared by both assignment grids. */
+export interface MacroControls {
+  armedKey: string | null
+  onArm: (key: string, label: string, values: string[]) => void
+  onCancel: () => void
+}
+
+/** What the macro types for a cell: the number, or MI (missing), EX (exempt), IN (blank). */
+const macroValue = (score: Score | null, number: () => string): string =>
+  score === null ? 'IN' : score === 'M' ? 'MI' : score === 'E' ? 'EX' : number()
+
+function MacroButton({ macro, macroKey, label, values }: { macro: MacroControls; macroKey: string; label: string; values: () => string[] }) {
+  const armed = macro.armedKey === macroKey
+  return (
+    <button
+      className={armed ? 'macro-btn armed' : 'macro-btn'}
+      aria-pressed={armed}
+      onClick={() => (armed ? macro.onCancel() : macro.onArm(macroKey, label, values()))}
+      title={armed ? 'Ready to type. Switch to the browser and press the hotkey. Click to cancel.' : 'Load this column, then type it into another app (e.g. PowerSchool) with a hotkey'}
+    >
+      {armed ? '● Armed' : '⌨ Type'}
+    </button>
+  )
+}
+
+function AssignmentHeader({ gb, a, empty, onEdit, widths, macro }: { gb: CourseGradebook; a: GradebookAssignment; empty?: number; onEdit?: (a: GradebookAssignment) => void; widths: ColumnWidths; macro?: ReactNode }) {
   const stems = a.stemIds.map((id) => gb.stems.find((s) => s.id === id)?.name).filter((n): n is string => !!n)
   const summary = `${a.name}. Maximum ${formatNumber(a.maxPoints)} points, weight ${a.weight}. Due ${formatDueDate(a.dueDate)}. Stems: ${stems.join(', ') || 'none'}.`
   return (
@@ -63,6 +89,7 @@ function AssignmentHeader({ gb, a, empty, onEdit, widths }: { gb: CourseGradeboo
       <span className="header-stems">
         {stems.length ? stems.map((s) => <span key={s} className="chip">{s}</span>) : <span className="muted small">no stems</span>}
       </span>
+      {macro}
       <ResizeHandle colKey={assignmentCol(a.id)} current={widths.widthOf(assignmentCol(a.id), DEFAULT_ASSIGNMENT_WIDTH)} widths={widths} label={a.name} />
     </th>
   )
@@ -160,8 +187,9 @@ export function RawScoresGrid(props: {
   readOnly: boolean
   onEditAssignment: (a: GradebookAssignment) => void
   onSetScore: (assignmentId: number, studentId: number, rawScore: Score | null) => Promise<void>
+  macro: MacroControls
 }) {
-  const { gb, readOnly, onEditAssignment, onSetScore } = props
+  const { gb, readOnly, onEditAssignment, onSetScore, macro } = props
   const idx = new ScoreIndex(gb.scores)
   const widths = useColumnWidths()
   const cols = assignmentCols(gb)
@@ -174,7 +202,15 @@ export function RawScoresGrid(props: {
           <tr>
             <StudentHeader widths={widths} />
             {gb.assignments.map((a) => (
-              <AssignmentHeader key={a.id} gb={gb} a={a} empty={emptyCount(a.id)} widths={widths} onEdit={readOnly ? undefined : onEditAssignment} />
+              <AssignmentHeader
+                key={a.id} gb={gb} a={a} empty={emptyCount(a.id)} widths={widths} onEdit={readOnly ? undefined : onEditAssignment}
+                macro={
+                  <MacroButton
+                    macro={macro} macroKey={`raw-${a.id}`} label={`${a.name} (raw scores)`}
+                    values={() => gb.students.map((s) => macroValue(idx.get(s.id, a.id), () => formatScore(idx.get(s.id, a.id))))}
+                  />
+                }
+              />
             ))}
           </tr>
         </thead>
@@ -202,7 +238,7 @@ export function RawScoresGrid(props: {
   )
 }
 
-export function PowerSchoolGrid({ gb }: { gb: CourseGradebook }) {
+export function PowerSchoolGrid({ gb, macro }: { gb: CourseGradebook; macro: MacroControls }) {
   const idx = new ScoreIndex(gb.scores)
   const widths = useColumnWidths()
   const cols = assignmentCols(gb)
@@ -214,7 +250,20 @@ export function PowerSchoolGrid({ gb }: { gb: CourseGradebook }) {
         <thead>
           <tr>
             <StudentHeader widths={widths} />
-            {gb.assignments.map((a) => <AssignmentHeader key={a.id} gb={gb} a={a} empty={emptyCount(a.id)} widths={widths} />)}
+            {gb.assignments.map((a) => (
+              <AssignmentHeader
+                key={a.id} gb={gb} a={a} empty={emptyCount(a.id)} widths={widths}
+                macro={
+                  <MacroButton
+                    macro={macro} macroKey={`ps-${a.id}`} label={`${a.name} (PowerSchool grades)`}
+                    values={() => gb.students.map((s) => {
+                      const score = idx.get(s.id, a.id)
+                      return macroValue(score, () => formatGrade(toPowerSchoolGrade(score, a.maxPoints)))
+                    })}
+                  />
+                }
+              />
+            ))}
           </tr>
         </thead>
         <tbody>
