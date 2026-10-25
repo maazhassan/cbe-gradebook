@@ -6,7 +6,7 @@ import { AppError, userVersion } from './db/connection'
 import { listAutomaticBackups, timestamp } from './db/backup'
 import { DbHolder } from './db/holder'
 import { registerIpc } from './ipc'
-import { armMacro, cancelMacro, prepareLinuxGlobalShortcuts } from './macro'
+import { armMacro, cancelMacro, prepareLinuxGlobalShortcuts, resetLinuxShortcutBinding } from './macro'
 import type { Handlers } from './ipc'
 import * as stems from './services/stems'
 import * as courses from './services/courses'
@@ -156,6 +156,7 @@ else {
   })
 
   void app.whenReady().then(() => {
+    resetLinuxShortcutBinding()
     lockDownNetwork()
     // No File/Edit/View/Window bar in the packaged app. Kept in dev (reload, DevTools) and on macOS, where the menu
     // lives in the system bar and is needed for Cmd+C/V/Q.

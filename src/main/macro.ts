@@ -57,6 +57,19 @@ export function prepareLinuxGlobalShortcuts(): void {
   }
 }
 
+/**
+ * Forget the hotkey binding KDE saved on the previous run. On relaunch Chromium sees the saved binding, skips binding
+ * it again, and KDE then never delivers key presses to the new session, so the hotkey silently does nothing. With the
+ * binding cleared, Chromium binds afresh and KDE asks the user to confirm it once per launch. Call once at startup,
+ * after the single-instance check (a second instance must not clear the running app's binding).
+ */
+export function resetLinuxShortcutBinding(): void {
+  if (process.platform !== 'linux' || process.env['XDG_SESSION_TYPE'] !== 'wayland') return
+  const component = `/component/${LINUX_APP_ID.replace(/-/g, '_')}`
+  // Fails harmlessly on desktops without kglobalaccel, or when nothing is saved yet.
+  execFile('busctl', ['--user', 'call', 'org.kde.kglobalaccel', component, 'org.kde.kglobalaccel.Component', 'cleanUp'], () => {})
+}
+
 function send(target: WebContents, event: MacroEvent): void {
   if (!target.isDestroyed()) target.send('macro:event', event)
 }
