@@ -24,7 +24,7 @@ const derive = (courseId: number, studentId: number) => {
   }
 }
 const newAssignment = (over: Partial<Parameters<typeof gb.createAssignment>[1]> = {}) =>
-  gb.createAssignment(db, { courseId: ctx.ela.id, name: 'Essay', maxPoints: 10, weight: 1, stemIds: [], ...over })
+  gb.createAssignment(db, { courseId: ctx.ela.id, name: 'Essay', maxPoints: 10, weight: 1, dueDate: '2026-10-24', stemIds: [], ...over })
 
 describe('seed data and stems', () => {
   it('seeds subjects and stems in order from the database', () => {
@@ -55,10 +55,10 @@ describe('seed data and stems', () => {
     expect(gb.getGradebook(db, ctx.ela.id).stems.map((s) => s.name)).toContain('Reads')
     expect(() => newAssignment({ stemIds: [reads] })).toThrow(/inactive/)
     // editing the existing assignment keeps the link
-    const updated = gb.updateAssignment(db, { id: a.id, name: 'Essay 2', maxPoints: 10, weight: 1, stemIds: [reads] })
+    const updated = gb.updateAssignment(db, { id: a.id, name: 'Essay 2', maxPoints: 10, weight: 1, dueDate: '2026-10-24', stemIds: [reads] })
     expect(updated.stemIds).toEqual([reads])
     // once unused anywhere, it disappears from the course view
-    gb.updateAssignment(db, { id: a.id, name: 'Essay 2', maxPoints: 10, weight: 1, stemIds: [] })
+    gb.updateAssignment(db, { id: a.id, name: 'Essay 2', maxPoints: 10, weight: 1, dueDate: '2026-10-24', stemIds: [] })
     expect(gb.getGradebook(db, ctx.ela.id).stems.map((s) => s.name)).not.toContain('Reads')
     expect(() => db.prepare('DELETE FROM stems WHERE id = ?').run(reads)).not.toThrow()
   })
@@ -84,6 +84,34 @@ describe('students and enrolment', () => {
     students.setEnrollment(db, { studentId: ctx.ada.id, courseId: ctx.ela.id, active: true })
     const n = db.prepare('SELECT COUNT(*) AS n FROM course_enrollments WHERE student_id = ? AND course_id = ?').get(ctx.ada.id, ctx.ela.id) as { n: number }
     expect(n.n).toBe(1)
+  })
+  it('missing counts as 0, exempt is excluded, and both round-trip', () => {
+    const reads = stemId(db, 'ELA', 'Reads')
+    const a = gb.createAssignment(db, { courseId: ctx.ela.id, name: 'ME', maxPoints: 10, weight: 1, dueDate: '2026-10-24', stemIds: [reads] })
+    const b = gb.createAssignment(db, { courseId: ctx.ela.id, name: 'Full', maxPoints: 10, weight: 1, dueDate: '2026-10-24', stemIds: [reads] })
+    gb.setRawScore(db, { assignmentId: b.id, studentId: ctx.ada.id, rawScore: 10 })
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 'M' })
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ben.id, rawScore: 'E' })
+    gb.setRawScore(db, { assignmentId: b.id, studentId: ctx.ben.id, rawScore: 10 })
+    const g = gb.getGradebook(db, ctx.ela.id)
+    const idx = new ScoreIndex(g.scores)
+    expect(idx.get(ctx.ada.id, a.id)).toBe('M')
+    expect(idx.get(ctx.ben.id, a.id)).toBe('E')
+    const avg = (sid: number) => stemAveragesForStudent(g.assignments, [reads], (id) => idx.get(sid, id)).get(reads)
+    expect(avg(ctx.ada.id)).toBe(2.5) // (1 + 4) / 2
+    expect(avg(ctx.ben.id)).toBe(4) // exempt ignored
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 7 })
+    expect(new ScoreIndex(gb.getGradebook(db, ctx.ela.id).scores).get(ctx.ada.id, a.id)).toBe(7)
+  })
+
+  it('requires a valid due date and shows it in the exports', () => {
+    for (const bad of ['', '2026-02-30', '24/10/2026', 'tomorrow']) {
+      expect(() => newAssignment({ dueDate: bad })).toThrow(/[Dd]ue date/)
+    }
+    const a = newAssignment({ dueDate: '2026-11-03' })
+    expect(a.dueDate).toBe('2026-11-03')
+    expect(rawScoresCsv(gb.getGradebook(db, ctx.ela.id))).toContain('due Nov 3, 2026')
+    expect(gb.updateAssignment(db, { id: a.id, name: 'Essay', maxPoints: 10, weight: 1, dueDate: '2026-12-01', stemIds: [] }).dueDate).toBe('2026-12-01')
   })
   it('validates names and comments, and persists comments', () => {
     expect(() => students.createStudent(db, { firstName: ' ', lastName: 'X', courseIds: [] })).toThrow()
@@ -143,10 +171,10 @@ describe('assignments and scores', () => {
     const a = newAssignment({ stemIds: [reads] })
     gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8 })
     expect(derive(ctx.ela.id, ctx.ada.id).grades).toEqual([3])
-    gb.updateAssignment(db, { id: a.id, name: 'Essay', maxPoints: 20, weight: 1, stemIds: [reads] })
+    gb.updateAssignment(db, { id: a.id, name: 'Essay', maxPoints: 20, weight: 1, dueDate: '2026-10-24', stemIds: [reads] })
     expect(derive(ctx.ela.id, ctx.ada.id).grades).toEqual([1])
     expect(derive(ctx.ela.id, ctx.ada.id).averages.get(reads)).toBe(1)
-    expect(() => gb.updateAssignment(db, { id: a.id, name: 'Essay', maxPoints: 5, weight: 1, stemIds: [reads] })).toThrow(/higher/)
+    expect(() => gb.updateAssignment(db, { id: a.id, name: 'Essay', maxPoints: 5, weight: 1, dueDate: '2026-10-24', stemIds: [reads] })).toThrow(/higher/)
   })
   it('changing weight or stem links recalculates averages', () => {
     const reads = stemId(db, 'ELA', 'Reads')
@@ -156,9 +184,9 @@ describe('assignments and scores', () => {
     gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 10 })
     gb.setRawScore(db, { assignmentId: b.id, studentId: ctx.ada.id, rawScore: 2 })
     expect(derive(ctx.ela.id, ctx.ada.id).averages.get(reads)).toBe(2.5)
-    gb.updateAssignment(db, { id: b.id, name: 'B', maxPoints: 10, weight: 3, stemIds: [reads] })
+    gb.updateAssignment(db, { id: b.id, name: 'B', maxPoints: 10, weight: 3, dueDate: '2026-10-24', stemIds: [reads] })
     expect(derive(ctx.ela.id, ctx.ada.id).averages.get(reads)).toBe(1.75)
-    gb.updateAssignment(db, { id: b.id, name: 'B', maxPoints: 10, weight: 3, stemIds: [writes] })
+    gb.updateAssignment(db, { id: b.id, name: 'B', maxPoints: 10, weight: 3, dueDate: '2026-10-24', stemIds: [writes] })
     const avgs = derive(ctx.ela.id, ctx.ada.id).averages
     expect(avgs.get(reads)).toBe(4)
     expect(avgs.get(writes)).toBe(1)
@@ -230,7 +258,7 @@ describe('dashboard and exports agree with the gradebook', () => {
     expect(rawScoresCsv(g)).toContain('"Lovelace, Ada",9')
     expect(rawScoresCsv(g)).toContain('"Okafor, Ben",\r\n')
     expect(powerSchoolCsv(g)).toContain('"Lovelace, Ada",4')
-    expect(stemAveragesCsv(g).split('\r\n')[1]).toBe('"Lovelace, Ada",4.00,,,,,')
+    expect(stemAveragesCsv(g).split('\r\n')[1]).toBe('"Lovelace, Ada",4.00,4,,,,,,,,,,')
     const dash = gb.getStudentDashboard(db, ctx.ada.id)
     const d = dash.courses.find((c) => c.course.id === ctx.ela.id)!
     const idx = new ScoreIndex(d.scores)

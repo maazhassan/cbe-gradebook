@@ -11,9 +11,10 @@ import * as students from '../src/main/services/students'
 import * as gb from '../src/main/services/gradebook'
 import { tempDir } from './helpers'
 
-const v2: Migration = { version: 2, name: 'add nickname', sql: 'ALTER TABLE students ADD COLUMN nickname TEXT;' }
+const NEXT = MIGRATIONS.length + 1
+const v2: Migration = { version: NEXT, name: 'add nickname', sql: 'ALTER TABLE students ADD COLUMN nickname TEXT;' }
 const badV2: Migration = {
-  version: 2,
+  version: NEXT,
   name: 'broken',
   sql: "ALTER TABLE students ADD COLUMN nickname TEXT; INSERT INTO students (first_name, last_name) VALUES ('Half', 'Done'); SELECT nope FROM nowhere;"
 }
@@ -23,7 +24,7 @@ function seed(path: string) {
   holder.open()
   const course = courses.createCourse(holder.db, { name: 'ELA', subjectId: 1 })
   const s = students.createStudent(holder.db, { firstName: 'Ada', lastName: 'L', courseIds: [course.id] })
-  const a = gb.createAssignment(holder.db, { courseId: course.id, name: 'Essay', maxPoints: 10, weight: 1, stemIds: [] })
+  const a = gb.createAssignment(holder.db, { courseId: course.id, name: 'Essay', maxPoints: 10, weight: 1, dueDate: '2026-10-24', stemIds: [] })
   gb.setRawScore(holder.db, { assignmentId: a.id, studentId: s.id, rawScore: 8 })
   return { holder, course, s, a }
 }
@@ -57,12 +58,12 @@ describe('migrations', () => {
     holder.close()
     const db = openDatabase(path)
     const report = runMigrations(db, join(path, '..', 'backups'), [...MIGRATIONS, v2])
-    expect(report.from).toBe(1)
-    expect(report.to).toBe(2)
-    expect(userVersion(db)).toBe(2)
+    expect(report.from).toBe(MIGRATIONS.length)
+    expect(report.to).toBe(NEXT)
+    expect(userVersion(db)).toBe(NEXT)
     expect((db.prepare('SELECT COUNT(*) AS n FROM grades').get() as { n: number }).n).toBe(1)
     expect(report.backupPath && existsSync(report.backupPath)).toBe(true)
-    expect(validateDatabaseFile(report.backupPath!)).toBe(1)
+    expect(validateDatabaseFile(report.backupPath!)).toBe(MIGRATIONS.length)
     db.close()
   })
 
@@ -72,7 +73,7 @@ describe('migrations', () => {
     holder.close()
     const db = openDatabase(path)
     expect(() => runMigrations(db, join(path, '..', 'backups'), [...MIGRATIONS, badV2])).toThrow(/rolled back/)
-    expect(userVersion(db)).toBe(1)
+    expect(userVersion(db)).toBe(MIGRATIONS.length)
     const cols = db.prepare('PRAGMA table_info(students)').all() as { name: string }[]
     expect(cols.map((c) => c.name)).not.toContain('nickname')
     expect((db.prepare('SELECT COUNT(*) AS n FROM students').get() as { n: number }).n).toBe(1)
@@ -168,7 +169,7 @@ describe('backup and restore', () => {
     const upgraded = new DbHolder(join(dir, 'g.sqlite'), join(dir, 'backups'), [...MIGRATIONS, v2])
     upgraded.open()
     upgraded.restoreFrom(backup)
-    expect(userVersion(upgraded.db)).toBe(2)
+    expect(userVersion(upgraded.db)).toBe(NEXT)
     upgraded.close()
   })
 })

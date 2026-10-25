@@ -1,14 +1,20 @@
 import { AppError, transaction } from '../db/connection'
 import type { Db } from '../db/connection'
-import { validateMaxPoints, validateRawScore, validateWeight } from '@shared/grading'
-import type { ScoreRecord } from '@shared/grading'
+import { validateDueDate, validateMaxPoints, validateRawScore, validateWeight } from '@shared/grading'
+import type { Score, ScoreRecord } from '@shared/grading'
 import type { AssignmentInput, CourseGradebook, DashboardCourse, GradebookAssignment, RosterStudent, Stem, StudentDashboard } from '@shared/types'
 import { getCourse } from './courses'
 import { getStudent } from './students'
 
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 
-interface AssignmentRow { id: number; course_id: number; name: string; max_points: number; weight: number; sort_order: number; archived: number }
+interface AssignmentRow { id: number; course_id: number; name: string; max_points: number; weight: number; due_date: string; sort_order: number; archived: number }
+
+type GradeStatus = 'scored' | 'missing' | 'exempt'
+
+function toScore(rawScore: number, status: GradeStatus): Score {
+  return status === 'missing' ? 'M' : status === 'exempt' ? 'E' : rawScore
+}
 
 function loadAssignments(db: Db, courseId: number): GradebookAssignment[] {
   const rows = db
@@ -19,7 +25,7 @@ function loadAssignments(db: Db, courseId: number): GradebookAssignment[] {
       JOIN assignments a ON a.id = ast.assignment_id WHERE a.course_id = ? AND a.archived = 0`)
     .all(courseId) as { assignment_id: number; stem_id: number }[]
   return rows.map((r) => ({
-    id: r.id, name: r.name, maxPoints: r.max_points, weight: r.weight, sortOrder: r.sort_order,
+    id: r.id, name: r.name, maxPoints: r.max_points, weight: r.weight, dueDate: r.due_date, sortOrder: r.sort_order,
     stemIds: links.filter((l) => l.assignment_id === r.id).map((l) => l.stem_id)
   }))
 }
@@ -47,10 +53,10 @@ export function getGradebook(db: Db, courseId: number): CourseGradebook {
   ).map((s): RosterStudent => ({ id: s.id, firstName: s.first_name, lastName: s.last_name }))
   const scores = (
     db
-      .prepare(`SELECT g.assignment_id, g.student_id, g.raw_score FROM grades g JOIN assignments a ON a.id = g.assignment_id
+      .prepare(`SELECT g.assignment_id, g.student_id, g.raw_score, g.status FROM grades g JOIN assignments a ON a.id = g.assignment_id
         WHERE a.course_id = ? AND a.archived = 0`)
-      .all(courseId) as { assignment_id: number; student_id: number; raw_score: number }[]
-  ).map((g): ScoreRecord => ({ assignmentId: g.assignment_id, studentId: g.student_id, rawScore: g.raw_score }))
+      .all(courseId) as { assignment_id: number; student_id: number; raw_score: number; status: GradeStatus }[]
+  ).map((g): ScoreRecord => ({ assignmentId: g.assignment_id, studentId: g.student_id, rawScore: toScore(g.raw_score, g.status) }))
   return { course, assignments, students, scores, stems: loadCourseStems(db, course.subjectId, assignments) }
 }
 
@@ -58,7 +64,7 @@ function validateAssignmentInput(input: AssignmentInput): string {
   const name = input.name.trim()
   if (!name) throw new AppError('Assignment name is required.')
   if (name.length > 100) throw new AppError('Assignment name must be 100 characters or fewer.')
-  const error = validateMaxPoints(input.maxPoints) ?? validateWeight(input.weight)
+  const error = validateMaxPoints(input.maxPoints) ?? validateWeight(input.weight) ?? validateDueDate(input.dueDate)
   if (error) throw new AppError(error)
   return name
 }
@@ -92,8 +98,8 @@ export function createAssignment(db: Db, input: { courseId: number } & Assignmen
   const id = transaction(db, () => {
     const next = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM assignments WHERE course_id = ?').get(input.courseId) as { n: number }
     const { lastInsertRowid } = db
-      .prepare('INSERT INTO assignments (course_id, name, max_points, weight, sort_order) VALUES (?, ?, ?, ?, ?)')
-      .run(input.courseId, name, input.maxPoints, input.weight, next.n)
+      .prepare('INSERT INTO assignments (course_id, name, max_points, weight, due_date, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(input.courseId, name, input.maxPoints, input.weight, input.dueDate, next.n)
     setStemLinks(db, Number(lastInsertRowid), course.subjectId, input.stemIds, new Set())
     return Number(lastInsertRowid)
   })
@@ -112,7 +118,7 @@ export function updateAssignment(db: Db, input: { id: number } & AssignmentInput
     if (tooHigh.n > 0) {
       throw new AppError(`${tooHigh.n} existing score${tooHigh.n === 1 ? ' is' : 's are'} higher than ${input.maxPoints}. Fix those scores before lowering the maximum.`)
     }
-    db.prepare(`UPDATE assignments SET name = ?, max_points = ?, weight = ?, updated_at = ${NOW} WHERE id = ?`).run(name, input.maxPoints, input.weight, input.id)
+    db.prepare(`UPDATE assignments SET name = ?, max_points = ?, weight = ?, due_date = ?, updated_at = ${NOW} WHERE id = ?`).run(name, input.maxPoints, input.weight, input.dueDate, input.id)
     const linked = db.prepare('SELECT stem_id FROM assignment_stems WHERE assignment_id = ?').all(input.id) as { stem_id: number }[]
     setStemLinks(db, input.id, course.subjectId, input.stemIds, new Set(linked.map((l) => l.stem_id)))
   })
@@ -126,7 +132,7 @@ export function archiveAssignment(db: Db, id: number): void {
   db.prepare(`UPDATE assignments SET archived = 1, updated_at = ${NOW} WHERE id = ?`).run(id)
 }
 
-export function setRawScore(db: Db, input: { assignmentId: number; studentId: number; rawScore: number | null }): void {
+export function setRawScore(db: Db, input: { assignmentId: number; studentId: number; rawScore: Score | null }): void {
   transaction(db, () => {
     const assignment = getAssignmentRow(db, input.assignmentId)
     assertCourseOpen(db, assignment.course_id)
@@ -140,10 +146,12 @@ export function setRawScore(db: Db, input: { assignmentId: number; studentId: nu
     if (input.rawScore === null) {
       db.prepare('DELETE FROM grades WHERE assignment_id = ? AND student_id = ?').run(input.assignmentId, input.studentId)
     } else {
+      const status: GradeStatus = input.rawScore === 'M' ? 'missing' : input.rawScore === 'E' ? 'exempt' : 'scored'
+      const raw = typeof input.rawScore === 'number' ? input.rawScore : 0
       db.prepare(
-        `INSERT INTO grades (assignment_id, student_id, raw_score) VALUES (?, ?, ?)
-         ON CONFLICT (assignment_id, student_id) DO UPDATE SET raw_score = excluded.raw_score, updated_at = ${NOW}`
-      ).run(input.assignmentId, input.studentId, input.rawScore)
+        `INSERT INTO grades (assignment_id, student_id, raw_score, status) VALUES (?, ?, ?, ?)
+         ON CONFLICT (assignment_id, student_id) DO UPDATE SET raw_score = excluded.raw_score, status = excluded.status, updated_at = ${NOW}`
+      ).run(input.assignmentId, input.studentId, raw, status)
     }
   })
 }
@@ -155,10 +163,10 @@ export function getStudentDashboard(db: Db, studentId: number): StudentDashboard
     const assignments = loadAssignments(db, course.id)
     const scores = (
       db
-        .prepare(`SELECT g.assignment_id, g.raw_score FROM grades g JOIN assignments a ON a.id = g.assignment_id
+        .prepare(`SELECT g.assignment_id, g.raw_score, g.status FROM grades g JOIN assignments a ON a.id = g.assignment_id
           WHERE a.course_id = ? AND a.archived = 0 AND g.student_id = ?`)
-        .all(course.id, studentId) as { assignment_id: number; raw_score: number }[]
-    ).map((g): ScoreRecord => ({ assignmentId: g.assignment_id, studentId, rawScore: g.raw_score }))
+        .all(course.id, studentId) as { assignment_id: number; raw_score: number; status: GradeStatus }[]
+    ).map((g): ScoreRecord => ({ assignmentId: g.assignment_id, studentId, rawScore: toScore(g.raw_score, g.status) }))
     return { course, enrollmentActive: enrollment.active, assignments, scores, stems: loadCourseStems(db, course.subjectId, assignments) }
   })
   return { student, courses }

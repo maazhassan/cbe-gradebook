@@ -35,6 +35,13 @@ describe('PowerSchool grade conversion', () => {
 
 describe('weighted stem average', () => {
   const item = (score: number | null, weight = 1, maxPoints = 10) => ({ score, maxPoints, weight })
+  it('whole-number rounding is half-up from the exact value', () => {
+    expect(weightedAverage([item(10), item(8), item(8)], 0)).toBe(3) // 3.33
+    expect(weightedAverage([item(10, 1), item(8, 1)], 0)).toBe(4) // 3.5
+    expect(weightedAverage([item(5, 1), item(5, 1), item(0, 1)], 0)).toBe(2) // 1.67
+    expect(weightedAverage([item(null)], 0)).toBeNull()
+    expect(formatAverage(3, 0)).toBe('3')
+  })
   it('single assignment yields its grade regardless of weight', () => {
     expect(weightedAverage([item(8, 1)])).toBe(3)
     expect(weightedAverage([item(8, 5)])).toBe(3)
@@ -110,6 +117,10 @@ describe('validation', () => {
     expect(parseScoreInput('0', 10)).toEqual({ ok: true, value: 0 })
     expect(parseScoreInput('7.5', 10)).toEqual({ ok: true, value: 7.5 })
     expect(parseScoreInput('10', 10)).toEqual({ ok: true, value: 10 })
+    expect(parseScoreInput(' m ', 10)).toEqual({ ok: true, value: 'M' })
+    expect(parseScoreInput('e', 10)).toEqual({ ok: true, value: 'E' })
+    expect(toPowerSchoolGrade('M', 10)).toBe(1)
+    expect(toPowerSchoolGrade('E', 10)).toBeNull()
     for (const bad of ['-1', 'abc', 'Infinity', '1e3', '11', '1,5', 'NaN']) expect(parseScoreInput(bad, 10).ok).toBe(false)
   })
 })

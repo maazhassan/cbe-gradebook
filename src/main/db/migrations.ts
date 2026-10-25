@@ -149,4 +149,21 @@ INSERT INTO stems (subject_id, name, display_order) VALUES
   (2, 'Understands', 1), (2, 'Explores', 2), (2, 'Inquires', 3), (2, 'Communicates', 4);
 `
 
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: 'initial schema and seed data', sql: initialSchema }]
+// Missing/exempt marks are rows with a non-'scored' status. raw_score stays NOT NULL and is stored as 0 for them
+// (ignored on read), so the existing score triggers and the table definition need no rebuild.
+const gradeStatus = `
+ALTER TABLE grades ADD COLUMN status TEXT NOT NULL DEFAULT 'scored' CHECK (status IN ('scored', 'missing', 'exempt'));
+`
+
+// Existing assignments are backfilled with the date this migration was written (2026-10-24).
+// New assignments must supply a date (enforced by the service); the default only exists for ALTER TABLE.
+const assignmentDueDate = `
+ALTER TABLE assignments ADD COLUMN due_date TEXT NOT NULL DEFAULT '2026-10-24'
+  CHECK (due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');
+`
+
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: 'initial schema and seed data', sql: initialSchema },
+  { version: 2, name: 'missing and exempt grade statuses', sql: gradeStatus },
+  { version: 3, name: 'assignment due dates', sql: assignmentDueDate }
+]

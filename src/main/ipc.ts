@@ -9,7 +9,7 @@ const text = (max: number) => z.string().max(max)
 const name = text(200)
 const stemIds = z.array(id).max(100)
 const assignment = {
-  name, maxPoints: z.number().finite(), weight: z.number().finite(), stemIds
+  name, maxPoints: z.number().finite(), weight: z.number().finite(), dueDate: z.string(), stemIds
 }
 const comments = { positiveComment1: text(5000), positiveComment2: text(5000), growthComment: text(5000) }
 
@@ -50,7 +50,7 @@ export const schemas = {
   createAssignment: z.tuple([z.object({ courseId: id, ...assignment })]),
   updateAssignment: z.tuple([z.object({ id, ...assignment })]),
   archiveAssignment: z.tuple([id]),
-  setRawScore: z.tuple([z.object({ assignmentId: id, studentId: id, rawScore: z.number().finite().nullable() })]),
+  setRawScore: z.tuple([z.object({ assignmentId: id, studentId: id, rawScore: z.union([z.number().finite(), z.enum(['M', 'E'])]).nullable() })]),
   enrollStudents: z.tuple([z.object({ courseId: id, studentIds: z.array(id).max(500) })]),
   getStudentDashboard: z.tuple([id]),
   createBackup: z.tuple([]),

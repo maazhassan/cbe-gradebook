@@ -1,4 +1,4 @@
-import type { ScoreRecord } from './grading'
+import type { Score, ScoreRecord } from './grading'
 
 export interface Subject {
   id: number
@@ -60,6 +60,8 @@ export interface GradebookAssignment {
   name: string
   maxPoints: number
   weight: number
+  /** ISO calendar date, YYYY-MM-DD. */
+  dueDate: string
   sortOrder: number
   stemIds: number[]
 }
@@ -106,6 +108,7 @@ export interface AssignmentInput {
   name: string
   maxPoints: number
   weight: number
+  dueDate: string
   stemIds: number[]
 }
 
@@ -151,7 +154,7 @@ export interface Api {
   createAssignment(input: { courseId: number } & AssignmentInput): Promise<GradebookAssignment>
   updateAssignment(input: { id: number } & AssignmentInput): Promise<GradebookAssignment>
   archiveAssignment(id: number): Promise<void>
-  setRawScore(input: { assignmentId: number; studentId: number; rawScore: number | null }): Promise<void>
+  setRawScore(input: { assignmentId: number; studentId: number; rawScore: Score | null }): Promise<void>
   enrollStudents(input: { courseId: number; studentIds: number[] }): Promise<void>
 
   getStudentDashboard(id: number): Promise<StudentDashboard>

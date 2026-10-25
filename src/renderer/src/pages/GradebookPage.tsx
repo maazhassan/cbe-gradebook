@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { powerSchoolCsv, rawScoresCsv, stemAveragesCsv } from '@shared/export'
+import type { AverageDecimals, Score } from '@shared/grading'
 import type { GradebookAssignment } from '@shared/types'
 import type { Navigate } from '../App'
 import { AssignmentDialog } from '../components/AssignmentDialog'
@@ -23,6 +24,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const [tab, setTab] = useState<Tab>('raw')
   const [editing, setEditing] = useState<GradebookAssignment | 'new' | null>(null)
   const [enrolling, setEnrolling] = useState(false)
+  const [decimals, setDecimals] = useState<AverageDecimals>(2)
 
   useEffect(() => {
     const list = courses.data
@@ -58,7 +60,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const gb = book.data
   const readOnly = !!gb?.course.archived
 
-  const setScore = async (assignmentId: number, studentId: number, rawScore: number | null) => {
+  const setScore = async (assignmentId: number, studentId: number, rawScore: Score | null) => {
     await status.track(window.api.setRawScore({ assignmentId, studentId, rawScore }))
     book.setData((cur) => ({
       ...cur!,
@@ -118,9 +120,15 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
         ))}
       </div>
 
-      {tab === 'raw' && <p className="tab-note">Type raw scores here. This is the only place scores are entered. Enter saves and moves down; Esc cancels; leave blank for not yet graded.</p>}
+      {tab === 'raw' && <p className="tab-note">Type raw scores here. This is the only place scores are entered. Enter saves and moves down; Esc cancels; leave blank for not yet graded (shown in red as empty). Type M for missing (counts as 0) or E for exempt (excluded).</p>}
       {tab === 'ps' && <p className="tab-note">Read-only. 90%+ = 4, 70%+ = 3, 50%+ = 2, below 50% = 1. Change scores on the Raw Scores tab.</p>}
-      {tab === 'stems' && <p className="tab-note">Read-only. Weighted average of PowerSchool grades per stem (weights are relative); ungraded work is ignored and blank means nothing graded yet.</p>}
+      {tab === 'stems' && (
+        <div className="segmented" role="group" aria-label="Average precision">
+          <button aria-pressed={decimals === 2} className={decimals === 2 ? 'active' : ''} onClick={() => setDecimals(2)}>2 decimals</button>
+          <button aria-pressed={decimals === 0} className={decimals === 0 ? 'active' : ''} onClick={() => setDecimals(0)}>Whole number</button>
+        </div>
+      )}
+      {tab === 'stems' && <p className="tab-note">Read-only. Weighted average of PowerSchool grades per stem (weights are relative); ungraded and exempt work is ignored, missing counts as 0, and blank means nothing graded yet. The CSV export includes both the 2-decimal and the rounded value for each stem.</p>}
       {readOnly && <p className="banner">This course is archived, so it is read-only. Reactivate it in Courses to make changes.</p>}
 
       {book.error && <p className="field-error" role="alert">{book.error}</p>}
@@ -141,7 +149,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
         <>
           {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} />}
           {tab === 'ps' && <PowerSchoolGrid gb={gb} />}
-          {tab === 'stems' && <StemAveragesGrid gb={gb} />}
+          {tab === 'stems' && <StemAveragesGrid gb={gb} decimals={decimals} />}
         </>
       )}
 
