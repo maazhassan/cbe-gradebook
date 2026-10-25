@@ -162,8 +162,23 @@ ALTER TABLE assignments ADD COLUMN due_date TEXT NOT NULL DEFAULT '2026-10-24'
   CHECK (due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');
 `
 
+// Free-text notes about a student. Archiving hides an entry from the student dashboard but keeps it for the archive view.
+const logEntries = `
+CREATE TABLE log_entries (
+  id INTEGER PRIMARY KEY,
+  student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+  title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+  body TEXT NOT NULL DEFAULT '',
+  archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX log_entries_student ON log_entries (student_id, archived);
+`
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema and seed data', sql: initialSchema },
   { version: 2, name: 'missing and exempt grade statuses', sql: gradeStatus },
-  { version: 3, name: 'assignment due dates', sql: assignmentDueDate }
+  { version: 3, name: 'assignment due dates', sql: assignmentDueDate },
+  { version: 4, name: 'student log entries', sql: logEntries }
 ]

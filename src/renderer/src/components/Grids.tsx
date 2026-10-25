@@ -6,7 +6,7 @@ import {
 import { ResizeHandle, STUDENT_COL, assignmentCol, stemCol, useColumnWidths } from './ColumnResize'
 import type { ColumnWidths } from './ColumnResize'
 import type { AverageDecimals, Score } from '@shared/grading'
-import type { CourseGradebook, GradebookAssignment } from '@shared/types'
+import type { CourseGradebook, GradebookAssignment, RosterStudent } from '@shared/types'
 
 const DEFAULT_STUDENT_WIDTH = 208
 const DEFAULT_ASSIGNMENT_WIDTH = 136
@@ -39,6 +39,17 @@ const assignmentCols = (gb: CourseGradebook) => [
 ]
 
 const fullName = (s: { firstName: string; lastName: string }): string => `${s.lastName}, ${s.firstName}`
+
+type OnStudent = (studentId: number) => void
+
+/** Row header cell; the name opens that student's dashboard. */
+function StudentCell({ s, onStudent }: { s: RosterStudent; onStudent: OnStudent }) {
+  return (
+    <th scope="row" className="student-col">
+      <button className="link student-link" onClick={() => onStudent(s.id)} title="Open student dashboard">{fullName(s)}</button>
+    </th>
+  )
+}
 
 /** Arming state for the "type this column into another app" macro, shared by both assignment grids. */
 export interface MacroControls {
@@ -188,8 +199,9 @@ export function RawScoresGrid(props: {
   onEditAssignment: (a: GradebookAssignment) => void
   onSetScore: (assignmentId: number, studentId: number, rawScore: Score | null) => Promise<void>
   macro: MacroControls
+  onStudent: OnStudent
 }) {
-  const { gb, readOnly, onEditAssignment, onSetScore, macro } = props
+  const { gb, readOnly, onEditAssignment, onSetScore, macro, onStudent } = props
   const idx = new ScoreIndex(gb.scores)
   const widths = useColumnWidths()
   const cols = assignmentCols(gb)
@@ -217,7 +229,7 @@ export function RawScoresGrid(props: {
         <tbody>
           {gb.students.map((s, r) => (
             <tr key={s.id}>
-              <th scope="row" className="student-col">{fullName(s)}</th>
+              <StudentCell s={s} onStudent={onStudent} />
               {gb.assignments.map((a, c) => (
                 <ScoreCell
                   key={a.id}
@@ -238,7 +250,7 @@ export function RawScoresGrid(props: {
   )
 }
 
-export function PowerSchoolGrid({ gb, macro }: { gb: CourseGradebook; macro: MacroControls }) {
+export function PowerSchoolGrid({ gb, macro, onStudent }: { gb: CourseGradebook; macro: MacroControls; onStudent: OnStudent }) {
   const idx = new ScoreIndex(gb.scores)
   const widths = useColumnWidths()
   const cols = assignmentCols(gb)
@@ -269,7 +281,7 @@ export function PowerSchoolGrid({ gb, macro }: { gb: CourseGradebook; macro: Mac
         <tbody>
           {gb.students.map((s) => (
             <tr key={s.id}>
-              <th scope="row" className="student-col">{fullName(s)}</th>
+              <StudentCell s={s} onStudent={onStudent} />
               {gb.assignments.map((a) => {
                 const score = idx.get(s.id, a.id)
                 const grade = toPowerSchoolGrade(score, a.maxPoints)
@@ -288,7 +300,7 @@ export function PowerSchoolGrid({ gb, macro }: { gb: CourseGradebook; macro: Mac
   )
 }
 
-export function StemAveragesGrid({ gb, decimals }: { gb: CourseGradebook; decimals: AverageDecimals }) {
+export function StemAveragesGrid({ gb, decimals, onStudent }: { gb: CourseGradebook; decimals: AverageDecimals; onStudent: OnStudent }) {
   const idx = new ScoreIndex(gb.scores)
   const stemIds = gb.stems.map((s) => s.id)
   const widths = useColumnWidths()
@@ -314,7 +326,7 @@ export function StemAveragesGrid({ gb, decimals }: { gb: CourseGradebook; decima
             const avgs = stemAveragesForStudent(gb.assignments, stemIds, (aid) => idx.get(s.id, aid), decimals)
             return (
               <tr key={s.id}>
-                <th scope="row" className="student-col">{fullName(s)}</th>
+                <StudentCell s={s} onStudent={onStudent} />
                 {stemIds.map((id) => (
                   <td key={id} className="value-cell">{formatAverage(avgs.get(id) ?? null, decimals)}</td>
                 ))}

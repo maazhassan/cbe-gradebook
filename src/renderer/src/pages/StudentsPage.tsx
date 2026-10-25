@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Course, Student } from '@shared/types'
+import type { Course, LogEntry, Student } from '@shared/types'
 import type { Navigate } from '../App'
+import { LogEntryList } from '../components/LogEntryList'
 import { CommentsEditor } from '../components/CommentsEditor'
 import { Modal, useConfirm } from '../components/Modal'
 import { RosterImport } from '../components/RosterImport'
@@ -62,6 +63,7 @@ function StudentDetail(props: { id: number; courses: Course[]; navigate: Navigat
   const dash = useLoad(() => window.api.getStudentDashboard(id), [id])
   const confirm = useConfirm()
   const status = useStatus()
+  const logs = useLoad(() => window.api.listLogEntries({ archived: false, studentId: id }), [id])
   const [editing, setEditing] = useState(false)
 
   if (dash.error) return <p className="field-error" role="alert">{dash.error}</p>
@@ -85,6 +87,13 @@ function StudentDetail(props: { id: number; courses: Course[]; navigate: Navigat
     try {
       await status.track(window.api.setStudentArchived({ id, archived: !student.archived }))
       await refresh()
+    } catch { /* shown in status area */ }
+  }
+
+  const archiveLog = async (entry: LogEntry) => {
+    try {
+      await status.track(window.api.setLogEntryArchived({ id: entry.id, archived: true }))
+      await logs.reload()
     } catch { /* shown in status area */ }
   }
 
@@ -139,6 +148,15 @@ function StudentDetail(props: { id: number; courses: Course[]; navigate: Navigat
 
       <h2 className="section-title">Grades <span className="muted small">read-only · enter scores in each course’s Raw Scores tab</span></h2>
       <StudentGrades dashboard={dash.data} navigate={navigate} />
+
+      <section className="panel" aria-labelledby="logs-h">
+        <div className="panel-head">
+          <h2 id="logs-h">Log entries</h2>
+          <button className="link" onClick={() => navigate('logs')}>Add or manage entries</button>
+        </div>
+        {logs.error && <p className="field-error" role="alert">{logs.error}</p>}
+        {logs.data && <LogEntryList entries={logs.data} empty="No log entries for this student." onToggleArchive={(e) => void archiveLog(e)} />}
+      </section>
 
       {editing && (
         <StudentDialog student={student} courses={courses} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void refresh() }} />

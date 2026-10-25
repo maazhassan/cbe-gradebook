@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { powerSchoolCsv, rawScoresCsv, stemAveragesCsv } from '@shared/export'
 import type { AverageDecimals, Score } from '@shared/grading'
-import type { GradebookAssignment, MacroArmed } from '@shared/types'
+import type { CourseGradebook, GradebookAssignment, MacroArmed } from '@shared/types'
 import type { Navigate } from '../App'
 import { AssignmentDialog } from '../components/AssignmentDialog'
 import { EnrolDialog } from '../components/EnrolDialog'
 import { PowerSchoolGrid, RawScoresGrid, StemAveragesGrid } from '../components/Grids'
 import type { MacroControls } from '../components/Grids'
 import { useStatus } from '../components/Status'
-import { errorMessage, useLoad } from '../hooks'
+import { errorMessage, getAssignmentOrder, sortAssignments, useLoad } from '../hooks'
+import type { AssignmentOrder } from '../hooks'
 
 type Tab = 'raw' | 'ps' | 'stems'
 const TABS: { id: Tab; label: string }[] = [
@@ -71,6 +72,12 @@ function useTypingMacro(status: ReturnType<typeof useStatus>): { armed: ArmedMac
   return { armed, controls, secondsLeft: armed ? Math.max(0, Math.ceil((armed.expiresAt - now) / 1000)) : 0 }
 }
 
+/** Applies the Settings ordering once, so both grids, the CSV exports and the typing macro all see the same column order. */
+function orderedBook(gb: CourseGradebook | null, order: AssignmentOrder): CourseGradebook | null {
+  if (!gb || order === 'added') return gb
+  return { ...gb, assignments: sortAssignments(gb.assignments, order) }
+}
+
 export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?: number; navigate: Navigate }) {
   const status = useStatus()
   const courses = useLoad(() => window.api.listCourses(), [])
@@ -80,6 +87,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const [enrolling, setEnrolling] = useState(false)
   const [decimals, setDecimals] = useState<AverageDecimals>(2)
   const macro = useTypingMacro(status)
+  const [assignmentOrder] = useState(getAssignmentOrder)
 
   useEffect(() => {
     const list = courses.data
@@ -112,7 +120,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
     )
   }
 
-  const gb = book.data
+  const gb = orderedBook(book.data, assignmentOrder)
   const readOnly = !!gb?.course.archived
 
   const setScore = async (assignmentId: number, studentId: number, rawScore: Score | null) => {
@@ -137,6 +145,8 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
       status.fail(errorMessage(e))
     }
   }
+
+  const openStudent = (studentId: number) => navigate('students', { studentId })
 
   const closeAndReload = async () => {
     setEditing(null)
@@ -211,9 +221,9 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
       )}
       {gb && gb.students.length > 0 && (gb.assignments.length > 0 || tab === 'stems') && (
         <>
-          {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} macro={macro.controls} />}
-          {tab === 'ps' && <PowerSchoolGrid gb={gb} macro={macro.controls} />}
-          {tab === 'stems' && <StemAveragesGrid gb={gb} decimals={decimals} />}
+          {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} macro={macro.controls} onStudent={openStudent} />}
+          {tab === 'ps' && <PowerSchoolGrid gb={gb} macro={macro.controls} onStudent={openStudent} />}
+          {tab === 'stems' && <StemAveragesGrid gb={gb} decimals={decimals} onStudent={openStudent} />}
         </>
       )}
 

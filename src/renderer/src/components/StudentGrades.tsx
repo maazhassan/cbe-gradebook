@@ -1,6 +1,7 @@
 import { ScoreIndex, formatAverage, formatDueDate, formatGrade, formatNumber, stemAveragesForStudent, toPowerSchoolGrade } from '@shared/grading'
 import type { GradebookAssignment, StudentDashboard } from '@shared/types'
 import type { Navigate } from '../App'
+import { getAssignmentOrder, sortAssignments } from '../hooks'
 
 const marked = (assignments: GradebookAssignment[], idx: ScoreIndex, studentId: number, mark: 'M' | 'E'): GradebookAssignment[] =>
   assignments.filter((a) => idx.get(studentId, a.id) === mark)
@@ -18,14 +19,16 @@ function MarkedList({ title, note, cls, items }: { title: string; note: string; 
 /** Read-only grades for every course the student is or was in. Uses the same grading functions as the gradebook. */
 export function StudentGrades({ dashboard, navigate }: { dashboard: StudentDashboard; navigate: Navigate }) {
   const studentId = dashboard.student.id
+  const order = getAssignmentOrder()
   if (dashboard.courses.length === 0) {
     return <p className="muted">Not enrolled in any course yet.</p>
   }
   return (
     <>
       {dashboard.courses.map((c) => {
+        const assignments = sortAssignments(c.assignments, order)
         const idx = new ScoreIndex(c.scores)
-        const avgs = stemAveragesForStudent(c.assignments, c.stems.map((s) => s.id), (aid) => idx.get(studentId, aid))
+        const avgs = stemAveragesForStudent(assignments, c.stems.map((s) => s.id), (aid) => idx.get(studentId, aid))
         const historical = c.course.archived || !c.enrollmentActive
         return (
           <section key={c.course.id} className={historical ? 'panel course-block historical' : 'panel course-block'}>
@@ -39,13 +42,13 @@ export function StudentGrades({ dashboard, navigate }: { dashboard: StudentDashb
                 <button className="link" onClick={() => navigate('gradebooks', { courseId: c.course.id })}>Open gradebook</button>
               </div>
             </div>
-            {c.assignments.length === 0 ? (
+            {assignments.length === 0 ? (
               <p className="muted">No assignments in this course yet.</p>
             ) : (
               <table className="list-table compact">
                 <thead><tr><th>Assignment</th><th>Due</th><th>Score</th><th>PowerSchool grade</th></tr></thead>
                 <tbody>
-                  {c.assignments.map((a) => {
+                  {assignments.map((a) => {
                     const score = idx.get(studentId, a.id)
                     const grade = toPowerSchoolGrade(score, a.maxPoints)
                     return (
@@ -65,8 +68,8 @@ export function StudentGrades({ dashboard, navigate }: { dashboard: StudentDashb
                 </tbody>
               </table>
             )}
-            <MarkedList title="Missing assignments" note="Counted as 0 in the averages below." cls="is-missing" items={marked(c.assignments, idx, studentId, 'M')} />
-            <MarkedList title="Exempt assignments" note="Excluded from the averages below." cls="is-exempt" items={marked(c.assignments, idx, studentId, 'E')} />
+            <MarkedList title="Missing assignments" note="Counted as 0 in the averages below." cls="is-missing" items={marked(assignments, idx, studentId, 'M')} />
+            <MarkedList title="Exempt assignments" note="Excluded from the averages below." cls="is-exempt" items={marked(assignments, idx, studentId, 'E')} />
             <h4>Weighted stem averages</h4>
             <table className="list-table compact stem-table">
               <thead><tr>{c.stems.map((s) => <th key={s.id}>{s.name}{!s.active && ' (inactive)'}</th>)}</tr></thead>

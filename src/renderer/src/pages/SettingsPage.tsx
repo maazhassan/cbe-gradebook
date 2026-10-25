@@ -3,7 +3,8 @@ import type { FormEvent } from 'react'
 import type { Stem, Subject } from '@shared/types'
 import { useConfirm } from '../components/Modal'
 import { useStatus } from '../components/Status'
-import { errorMessage, useLoad } from '../hooks'
+import { errorMessage, getAssignmentOrder, setAssignmentOrder, useLoad } from '../hooks'
+import type { AssignmentOrder } from '../hooks'
 
 function StemRow({ stem, first, last, onChange }: { stem: Stem; first: boolean; last: boolean; onChange: (stems: Stem[]) => void }) {
   const status = useStatus()
@@ -98,6 +99,7 @@ export function SettingsPage() {
   const status = useStatus()
   const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
+  const [order, setOrder] = useState(getAssignmentOrder)
 
   const backup = async () => {
     setBusy(true)
@@ -161,6 +163,18 @@ export function SettingsPage() {
             </ul>
           </details>
         )}
+      </section>
+
+      <section className="panel" aria-labelledby="order-h">
+        <h2 id="order-h">Gradebook</h2>
+        <label className="field">
+          <span>Order assignments by</span>
+          <select value={order} onChange={(e) => { const next = e.target.value as AssignmentOrder; setAssignmentOrder(next); setOrder(next) }}>
+            <option value="added">Date added</option>
+            <option value="dueDate">Due date</option>
+          </select>
+        </label>
+        <p className="hint">Applies to the Raw Scores and PowerSchool Grades tables together (and their CSV exports). Assignments with the same due date stay in the order they were added.</p>
       </section>
 
       <section className="panel" aria-labelledby="stems-h">

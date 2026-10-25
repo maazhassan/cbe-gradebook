@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { ConfirmProvider } from './components/Modal'
 import { StatusProvider } from './components/Status'
 import { CoursesPage } from './pages/CoursesPage'
+import { LogEntriesPage } from './pages/LogEntriesPage'
 import { GradebookPage } from './pages/GradebookPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { StudentsPage } from './pages/StudentsPage'
 
-export type Page = 'gradebooks' | 'students' | 'courses' | 'settings'
+export type Page = 'gradebooks' | 'students' | 'courses' | 'logs' | 'settings'
 export interface Navigate {
   (page: Page, target?: { courseId?: number; studentId?: number }): void
 }
@@ -15,6 +16,7 @@ const NAV: { page: Page; label: string }[] = [
   { page: 'gradebooks', label: 'Gradebooks' },
   { page: 'students', label: 'Students' },
   { page: 'courses', label: 'Courses' },
+  { page: 'logs', label: 'Log Entries' },
   { page: 'settings', label: 'Settings / Backups' }
 ]
 
@@ -47,6 +49,7 @@ export function App() {
             {page === 'gradebooks' && <GradebookPage initialCourseId={target.courseId} navigate={navigate} />}
             {page === 'students' && <StudentsPage initialStudentId={target.studentId} navigate={navigate} />}
             {page === 'courses' && <CoursesPage navigate={navigate} />}
+            {page === 'logs' && <LogEntriesPage navigate={navigate} />}
             {page === 'settings' && <SettingsPage />}
           </main>
         </div>

@@ -4,6 +4,7 @@ import * as stems from '../src/main/services/stems'
 import * as courses from '../src/main/services/courses'
 import * as students from '../src/main/services/students'
 import * as gb from '../src/main/services/gradebook'
+import * as logs from '../src/main/services/logEntries'
 import { ScoreIndex, stemAveragesForStudent, toPowerSchoolGrade } from '../src/shared/grading'
 import { powerSchoolCsv, rawScoresCsv, stemAveragesCsv } from '../src/shared/export'
 import { memoryDb, setup, stemId, subjectId } from './helpers'
@@ -263,5 +264,27 @@ describe('dashboard and exports agree with the gradebook', () => {
     const d = dash.courses.find((c) => c.course.id === ctx.ela.id)!
     const idx = new ScoreIndex(d.scores)
     expect(stemAveragesForStudent(d.assignments, d.stems.map((s) => s.id), (id) => idx.get(ctx.ada.id, id)).get(reads)).toBe(4)
+  })
+})
+
+describe('log entries', () => {
+  it('creates entries, lists them per student newest first, and archives/unarchives', () => {
+    const first = logs.createLogEntry(db, { studentId: ctx.ada.id, title: ' Late essay ', body: ' Talked after class. ' })
+    const second = logs.createLogEntry(db, { studentId: ctx.ada.id, title: 'Parent call', body: '' })
+    logs.createLogEntry(db, { studentId: ctx.ben.id, title: 'Other student', body: 'x' })
+    expect(first).toMatchObject({ title: 'Late essay', body: 'Talked after class.', studentLastName: 'Lovelace', archived: false })
+    expect(logs.listLogEntries(db, { archived: false, studentId: ctx.ada.id }).map((e) => e.id)).toEqual([second.id, first.id])
+    expect(logs.listLogEntries(db, { archived: false })).toHaveLength(3)
+
+    logs.setLogEntryArchived(db, { id: first.id, archived: true })
+    expect(logs.listLogEntries(db, { archived: false, studentId: ctx.ada.id }).map((e) => e.id)).toEqual([second.id])
+    expect(logs.listLogEntries(db, { archived: true }).map((e) => e.id)).toEqual([first.id])
+    logs.setLogEntryArchived(db, { id: first.id, archived: false })
+    expect(logs.listLogEntries(db, { archived: true })).toEqual([])
+  })
+  it('validates input', () => {
+    expect(() => logs.createLogEntry(db, { studentId: ctx.ada.id, title: '  ', body: 'x' })).toThrow(/title/)
+    expect(() => logs.createLogEntry(db, { studentId: 9999, title: 't', body: '' })).toThrow(/not found/)
+    expect(() => logs.setLogEntryArchived(db, { id: 9999, archived: true })).toThrow(/not found/)
   })
 })

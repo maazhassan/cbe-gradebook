@@ -43,3 +43,15 @@ export function useLoad<T>(fetcher: () => Promise<T>, deps: readonly unknown[]):
 
   return { ...state, reload, setData }
 }
+
+export type AssignmentOrder = 'added' | 'dueDate'
+const ORDER_KEY = 'assignmentOrder'
+
+export const getAssignmentOrder = (): AssignmentOrder => (localStorage.getItem(ORDER_KEY) === 'dueDate' ? 'dueDate' : 'added')
+export const setAssignmentOrder = (order: AssignmentOrder): void => localStorage.setItem(ORDER_KEY, order)
+
+/** Due-date order (ties keep the order added), or the incoming order for 'added'. */
+export function sortAssignments<T extends { dueDate: string; sortOrder: number; id: number }>(assignments: T[], order: AssignmentOrder): T[] {
+  if (order === 'added') return assignments
+  return [...assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sortOrder - b.sortOrder || a.id - b.id)
+}

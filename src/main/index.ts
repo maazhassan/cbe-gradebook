@@ -12,6 +12,7 @@ import * as stems from './services/stems'
 import * as courses from './services/courses'
 import * as students from './services/students'
 import * as gradebook from './services/gradebook'
+import * as logEntries from './services/logEntries'
 
 const isDev = !app.isPackaged && !!process.env['ELECTRON_RENDERER_URL']
 let mainWindow: BrowserWindow | null = null
@@ -55,6 +56,9 @@ function buildHandlers(): Handlers {
       for (const studentId of studentIds) students.setEnrollment(db(), { studentId, courseId, active: true })
     },
     getStudentDashboard: (i) => gradebook.getStudentDashboard(db(), i),
+    listLogEntries: (i) => logEntries.listLogEntries(db(), i),
+    createLogEntry: (i) => logEntries.createLogEntry(db(), i),
+    setLogEntryArchived: (i) => logEntries.setLogEntryArchived(db(), i),
 
     createBackup: async () => {
       const options = {
