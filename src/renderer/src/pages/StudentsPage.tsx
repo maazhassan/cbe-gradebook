@@ -32,8 +32,8 @@ function StudentDialog(props: { student: Student | null; courses: Course[]; onCl
   return (
     <Modal title={student ? 'Edit student' : 'Add student'} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <label className="field"><span>First name</span><input value={first} onChange={(e) => setFirst(e.target.value)} autoFocus /></label>
-        <label className="field"><span>Last name</span><input value={last} onChange={(e) => setLast(e.target.value)} /></label>
+        <label className="field"><span>First name</span><input spellCheck={false} value={first} onChange={(e) => setFirst(e.target.value)} autoFocus /></label>
+        <label className="field"><span>Last name</span><input spellCheck={false} value={last} onChange={(e) => setLast(e.target.value)} /></label>
         {!student && (
           <fieldset className="field">
             <legend>Enrol in courses</legend>

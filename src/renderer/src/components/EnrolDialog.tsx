@@ -64,8 +64,8 @@ export function EnrolDialog({ course, onClose, onDone }: { course: Course; onClo
         </section>
         <form onSubmit={createNew} noValidate>
           <h3>New student</h3>
-          <label className="field"><span>First name</span><input value={first} onChange={(e) => setFirst(e.target.value)} /></label>
-          <label className="field"><span>Last name</span><input value={last} onChange={(e) => setLast(e.target.value)} /></label>
+          <label className="field"><span>First name</span><input spellCheck={false} value={first} onChange={(e) => setFirst(e.target.value)} /></label>
+          <label className="field"><span>Last name</span><input spellCheck={false} value={last} onChange={(e) => setLast(e.target.value)} /></label>
           <button type="submit" className="primary" disabled={busy}>Create and add</button>
         </form>
       </div>

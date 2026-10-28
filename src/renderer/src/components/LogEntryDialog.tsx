@@ -31,8 +31,8 @@ export function LogEntryDialog({ entry, onClose, onSaved }: { entry: LogEntry; o
     <Modal title="Edit log entry" onClose={onClose}>
       <form onSubmit={(e) => void submit(e)} noValidate>
         <div className="field"><span>Student</span><StudentPicker students={students.data ?? []} value={studentId} onChange={setStudentId} /></div>
-        <label className="field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} /></label>
-        <label className="field"><span>Entry</span><textarea rows={6} value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000} /></label>
+        <label className="field"><span>Title</span><input spellCheck value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} /></label>
+        <label className="field"><span>Entry</span><textarea spellCheck rows={6} value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000} /></label>
         {error && <p className="field-error" role="alert">{error}</p>}
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>

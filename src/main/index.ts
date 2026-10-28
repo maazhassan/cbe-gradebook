@@ -127,7 +127,7 @@ function createWindow(): void {
     title: 'CBE Gradebook', icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true
+      contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: true
     }
   })
   mainWindow.once('ready-to-show', () => mainWindow?.show())

@@ -47,8 +47,8 @@ export function LogEntriesPage({ navigate }: { navigate: Navigate }) {
         <h2 id="new-log-h">New entry</h2>
         <form onSubmit={(e) => void submit(e)} noValidate>
           <div className="field"><span>Student</span><StudentPicker students={students.data ?? []} value={studentId} onChange={setStudentId} /></div>
-          <label className="field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} /></label>
-          <label className="field"><span>Entry</span><textarea rows={5} value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000} /></label>
+          <label className="field"><span>Title</span><input spellCheck value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} /></label>
+          <label className="field"><span>Entry</span><textarea spellCheck rows={5} value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000} /></label>
           {error && <p className="field-error" role="alert">{error}</p>}
           <div className="form-actions"><button type="submit" className="primary">Add entry</button></div>
         </form>

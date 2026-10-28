@@ -33,7 +33,7 @@ function CourseDialog({ course, onClose, onSaved }: { course: Course | null; onC
       <form onSubmit={submit} noValidate>
         <label className="field">
           <span>Course name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="e.g. ELA 8 – Block B" />
+          <input spellCheck value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="e.g. ELA 8 – Block B" />
         </label>
         <label className="field">
           <span>Subject</span>

@@ -69,7 +69,7 @@ export function AssignmentDialog(props: {
       <form onSubmit={submit} noValidate>
         <label className="field">
           <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus aria-invalid={!!errors.name} />
+          <input spellCheck value={name} onChange={(e) => setName(e.target.value)} autoFocus aria-invalid={!!errors.name} />
           {errors.name && <span className="field-error">{errors.name}</span>}
         </label>
         <div className="row">
