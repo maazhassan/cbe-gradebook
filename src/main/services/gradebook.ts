@@ -16,14 +16,14 @@ function toScore(rawScore: number, status: GradeStatus): Score {
   return status === 'missing' ? 'M' : status === 'exempt' ? 'E' : rawScore
 }
 
-function loadAssignments(db: Db, courseId: number): GradebookAssignment[] {
+function loadAssignments(db: Db, courseId: number, archived = 0): GradebookAssignment[] {
   const rows = db
-    .prepare('SELECT * FROM assignments WHERE course_id = ? AND archived = 0 ORDER BY sort_order, id')
-    .all(courseId) as unknown as AssignmentRow[]
+    .prepare('SELECT * FROM assignments WHERE course_id = ? AND archived = ? ORDER BY sort_order, id')
+    .all(courseId, archived) as unknown as AssignmentRow[]
   const links = db
     .prepare(`SELECT ast.assignment_id, ast.stem_id FROM assignment_stems ast
-      JOIN assignments a ON a.id = ast.assignment_id WHERE a.course_id = ? AND a.archived = 0`)
-    .all(courseId) as { assignment_id: number; stem_id: number }[]
+      JOIN assignments a ON a.id = ast.assignment_id WHERE a.course_id = ? AND a.archived = ?`)
+    .all(courseId, archived) as { assignment_id: number; stem_id: number }[]
   return rows.map((r) => ({
     id: r.id, name: r.name, maxPoints: r.max_points, weight: r.weight, dueDate: r.due_date, sortOrder: r.sort_order,
     stemIds: links.filter((l) => l.assignment_id === r.id).map((l) => l.stem_id)
@@ -69,9 +69,9 @@ function validateAssignmentInput(input: AssignmentInput): string {
   return name
 }
 
-function getAssignmentRow(db: Db, id: number): AssignmentRow {
+function getAssignmentRow(db: Db, id: number, archived = false): AssignmentRow {
   const row = db.prepare('SELECT * FROM assignments WHERE id = ?').get(id) as AssignmentRow | undefined
-  if (!row || row.archived) throw new AppError('Assignment not found.')
+  if (!row || (row.archived === 1) !== archived) throw new AppError('Assignment not found.')
   return row
 }
 
@@ -130,6 +130,17 @@ export function archiveAssignment(db: Db, id: number): void {
   const existing = getAssignmentRow(db, id)
   assertCourseOpen(db, existing.course_id)
   db.prepare(`UPDATE assignments SET archived = 1, updated_at = ${NOW} WHERE id = ?`).run(id)
+}
+
+export function listArchivedAssignments(db: Db, courseId: number): GradebookAssignment[] {
+  getCourse(db, courseId)
+  return loadAssignments(db, courseId, 1)
+}
+
+export function unarchiveAssignment(db: Db, id: number): void {
+  const existing = getAssignmentRow(db, id, true)
+  assertCourseOpen(db, existing.course_id)
+  db.prepare(`UPDATE assignments SET archived = 0, updated_at = ${NOW} WHERE id = ?`).run(id)
 }
 
 export function setRawScore(db: Db, input: { assignmentId: number; studentId: number; rawScore: Score | null }): void {

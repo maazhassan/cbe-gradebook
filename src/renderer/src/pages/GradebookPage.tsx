@@ -3,6 +3,7 @@ import { powerSchoolCsv, rawScoresCsv, stemAveragesCsv } from '@shared/export'
 import type { AverageDecimals, Score } from '@shared/grading'
 import type { CourseGradebook, GradebookAssignment, MacroArmed } from '@shared/types'
 import type { Navigate } from '../App'
+import { ArchivedAssignmentsDialog } from '../components/ArchivedAssignmentsDialog'
 import { AssignmentDialog } from '../components/AssignmentDialog'
 import { EnrolDialog } from '../components/EnrolDialog'
 import { PowerSchoolGrid, RawScoresGrid, StemAveragesGrid } from '../components/Grids'
@@ -85,6 +86,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const [tab, setTab] = useState<Tab>('raw')
   const [editing, setEditing] = useState<GradebookAssignment | 'new' | null>(null)
   const [enrolling, setEnrolling] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const [decimals, setDecimals] = useState<AverageDecimals>(2)
   const macro = useTypingMacro(status)
   const [assignmentOrder] = useState(getAssignmentOrder)
@@ -151,6 +153,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const closeAndReload = async () => {
     setEditing(null)
     setEnrolling(false)
+    setShowArchived(false)
     await Promise.all([book.reload(), courses.reload()])
   }
 
@@ -172,6 +175,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
         </div>
         <div className="head-actions">
           <button onClick={() => void exportCsv()} disabled={!gb}>Export CSV</button>
+          <button onClick={() => setShowArchived(true)} disabled={!gb}>Archived assignments</button>
           <button onClick={() => setEnrolling(true)} disabled={!gb || readOnly}>Add student</button>
           <button className="primary" onClick={() => setEditing('new')} disabled={!gb || readOnly}>Add assignment</button>
         </div>
@@ -229,6 +233,9 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
 
       {gb && editing && (
         <AssignmentDialog gb={gb} assignment={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => void closeAndReload()} />
+      )}
+      {gb && showArchived && (
+        <ArchivedAssignmentsDialog gb={gb} readOnly={readOnly} onClose={() => setShowArchived(false)} onRestored={() => void book.reload()} />
       )}
       {gb && enrolling && <EnrolDialog course={gb.course} onClose={() => setEnrolling(false)} onDone={() => void closeAndReload()} />}
     </div>

@@ -51,7 +51,7 @@ export function AssignmentDialog(props: {
     if (!assignment) return
     const ok = await confirm({
       title: 'Archive assignment?',
-      message: `“${assignment.name}” will be removed from the gradebook views and stem averages. Its scores stay in the database but cannot be restored from the app yet.`,
+      message: `“${assignment.name}” will be removed from the gradebook views and stem averages. Its scores stay in the database and you can restore it from “Archived assignments”.`,
       confirmLabel: 'Archive',
       danger: true
     })

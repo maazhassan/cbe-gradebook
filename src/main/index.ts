@@ -51,6 +51,8 @@ function buildHandlers(): Handlers {
     createAssignment: (i) => gradebook.createAssignment(db(), i),
     updateAssignment: (i) => gradebook.updateAssignment(db(), i),
     archiveAssignment: (i) => gradebook.archiveAssignment(db(), i),
+    unarchiveAssignment: (i) => gradebook.unarchiveAssignment(db(), i),
+    listArchivedAssignments: (i) => gradebook.listArchivedAssignments(db(), i),
     setRawScore: (i) => gradebook.setRawScore(db(), i),
     enrollStudents: ({ courseId, studentIds }) => {
       for (const studentId of studentIds) students.setEnrollment(db(), { studentId, courseId, active: true })

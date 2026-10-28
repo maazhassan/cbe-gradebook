@@ -58,6 +58,8 @@ export function CoursesPage({ navigate }: { navigate: Navigate }) {
   const confirm = useConfirm()
   const status = useStatus()
   const [editing, setEditing] = useState<Course | 'new' | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const visible = (courses.data ?? []).filter((c) => c.archived === showArchived)
 
   const toggleArchive = async (c: Course) => {
     if (!c.archived) {
@@ -80,17 +82,22 @@ export function CoursesPage({ navigate }: { navigate: Navigate }) {
     <div>
       <header className="page-head">
         <h1>Courses</h1>
-        <div className="head-actions"><button className="primary" onClick={() => setEditing('new')}>Add course</button></div>
+        <div className="head-actions">
+          <label className="check small"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived instead</label>
+          <button className="primary" onClick={() => setEditing('new')}>Add course</button></div>
       </header>
       {courses.error && <p className="field-error" role="alert">{courses.error}</p>}
       {courses.data && courses.data.length === 0 && (
         <div className="empty"><p>No courses yet. Add one, for example “ELA 8” or “Social Studies 8”.</p></div>
       )}
-      {courses.data && courses.data.length > 0 && (
+      {courses.data && courses.data.length > 0 && visible.length === 0 && (
+        <div className="empty"><p>{showArchived ? 'No archived courses.' : 'No active courses. Uncheck “Show archived instead” to reactivate one.'}</p></div>
+      )}
+      {visible.length > 0 && (
         <table className="list-table">
           <thead><tr><th>Course</th><th>Subject</th><th>Active students</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
-            {courses.data.map((c) => (
+            {visible.map((c) => (
               <tr key={c.id} className={c.archived ? 'archived' : ''}>
                 <td>{c.name}</td>
                 <td>{c.subjectName}</td>
@@ -99,7 +106,7 @@ export function CoursesPage({ navigate }: { navigate: Navigate }) {
                 <td className="actions">
                   <button onClick={() => navigate('gradebooks', { courseId: c.id })}>Open gradebook</button>
                   <button onClick={() => setEditing(c)}>Edit</button>
-                  <button onClick={() => void toggleArchive(c)}>{c.archived ? 'Reactivate' : 'Archive'}</button>
+                  <button onClick={() => void toggleArchive(c)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
                 </td>
               </tr>
             ))}

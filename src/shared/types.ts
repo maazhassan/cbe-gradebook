@@ -178,6 +178,8 @@ export interface Api {
   createAssignment(input: { courseId: number } & AssignmentInput): Promise<GradebookAssignment>
   updateAssignment(input: { id: number } & AssignmentInput): Promise<GradebookAssignment>
   archiveAssignment(id: number): Promise<void>
+  unarchiveAssignment(id: number): Promise<void>
+  listArchivedAssignments(courseId: number): Promise<GradebookAssignment[]>
   setRawScore(input: { assignmentId: number; studentId: number; rawScore: Score | null }): Promise<void>
   enrollStudents(input: { courseId: number; studentIds: number[] }): Promise<void>
 
@@ -206,7 +208,7 @@ export const API_METHODS: readonly ApiMethod[] = [
   'listCourses', 'createCourse', 'updateCourse', 'setCourseArchived',
   'listStudents', 'getStudent', 'createStudent', 'updateStudent', 'setStudentArchived',
   'updateStudentComments', 'setEnrollment', 'importRoster',
-  'getGradebook', 'createAssignment', 'updateAssignment', 'archiveAssignment', 'setRawScore', 'enrollStudents',
+  'getGradebook', 'createAssignment', 'updateAssignment', 'archiveAssignment', 'unarchiveAssignment', 'listArchivedAssignments', 'setRawScore', 'enrollStudents',
   'getStudentDashboard', 'listLogEntries', 'createLogEntry', 'updateLogEntry', 'setLogEntryArchived', 'createBackup', 'restoreBackup', 'saveTextFile', 'pickRosterFile',
   'armTypingMacro', 'disarmTypingMacro'
 ]

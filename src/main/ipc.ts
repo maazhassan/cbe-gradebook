@@ -50,6 +50,8 @@ export const schemas = {
   createAssignment: z.tuple([z.object({ courseId: id, ...assignment })]),
   updateAssignment: z.tuple([z.object({ id, ...assignment })]),
   archiveAssignment: z.tuple([id]),
+  unarchiveAssignment: z.tuple([id]),
+  listArchivedAssignments: z.tuple([id]),
   setRawScore: z.tuple([z.object({ assignmentId: id, studentId: id, rawScore: z.union([z.number().finite(), z.enum(['M', 'E'])]).nullable() })]),
   enrollStudents: z.tuple([z.object({ courseId: id, studentIds: z.array(id).max(500) })]),
   getStudentDashboard: z.tuple([id]),
