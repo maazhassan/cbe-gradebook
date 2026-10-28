@@ -55,6 +55,7 @@ export const schemas = {
   getStudentDashboard: z.tuple([id]),
   listLogEntries: z.tuple([z.object({ archived: z.boolean(), studentId: id.optional() })]),
   createLogEntry: z.tuple([z.object({ studentId: id, title: text(200), body: text(20_000) })]),
+  updateLogEntry: z.tuple([z.object({ id, studentId: id, title: text(200), body: text(20_000) })]),
   setLogEntryArchived: z.tuple([z.object({ id, archived: z.boolean() })]),
   createBackup: z.tuple([]),
   restoreBackup: z.tuple([]),

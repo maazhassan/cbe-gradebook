@@ -65,6 +65,7 @@ export function LogEntriesPage({ navigate }: { navigate: Navigate }) {
             entries={entries.data}
             empty={showArchived ? 'No archived entries.' : 'No log entries yet.'}
             onToggleArchive={(e) => void toggleArchive(e)}
+            onChanged={() => void entries.reload()}
             onStudent={(id) => navigate('students', { studentId: id })}
           />
         )}

@@ -26,13 +26,18 @@ export function listLogEntries(db: Db, input: { archived: boolean; studentId?: n
   return rows.map(toEntry)
 }
 
-export function createLogEntry(db: Db, input: { studentId: number; title: string; body: string }): LogEntry {
+function validate(db: Db, input: { studentId: number; title: string; body: string }): { title: string; body: string } {
   const title = input.title.trim()
   const body = input.body.trim()
   if (!title) throw new AppError('A title is required.')
   if (title.length > MAX_LOG_TITLE) throw new AppError(`The title must be ${MAX_LOG_TITLE} characters or fewer.`)
   if (body.length > MAX_LOG_BODY) throw new AppError(`The entry must be ${MAX_LOG_BODY} characters or fewer.`)
   if (!db.prepare('SELECT 1 FROM students WHERE id = ?').get(input.studentId)) throw new AppError('Student not found.')
+  return { title, body }
+}
+
+export function createLogEntry(db: Db, input: { studentId: number; title: string; body: string }): LogEntry {
+  const { title, body } = validate(db, input)
   const { lastInsertRowid } = db.prepare('INSERT INTO log_entries (student_id, title, body) VALUES (?, ?, ?)').run(input.studentId, title, body)
   return toEntry(db.prepare(`${SELECT} WHERE l.id = ?`).get(Number(lastInsertRowid)) as unknown as LogRow)
 }
@@ -40,4 +45,13 @@ export function createLogEntry(db: Db, input: { studentId: number; title: string
 export function setLogEntryArchived(db: Db, input: { id: number; archived: boolean }): void {
   const { changes } = db.prepare(`UPDATE log_entries SET archived = ?, updated_at = ${NOW} WHERE id = ?`).run(input.archived ? 1 : 0, input.id)
   if (!changes) throw new AppError('Log entry not found.')
+}
+
+export function updateLogEntry(db: Db, input: { id: number; studentId: number; title: string; body: string }): LogEntry {
+  const { title, body } = validate(db, input)
+  const { changes } = db
+    .prepare(`UPDATE log_entries SET student_id = ?, title = ?, body = ?, updated_at = ${NOW} WHERE id = ?`)
+    .run(input.studentId, title, body, input.id)
+  if (!changes) throw new AppError('Log entry not found.')
+  return toEntry(db.prepare(`${SELECT} WHERE l.id = ?`).get(input.id) as unknown as LogRow)
 }

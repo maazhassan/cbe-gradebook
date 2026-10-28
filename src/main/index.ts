@@ -58,6 +58,7 @@ function buildHandlers(): Handlers {
     getStudentDashboard: (i) => gradebook.getStudentDashboard(db(), i),
     listLogEntries: (i) => logEntries.listLogEntries(db(), i),
     createLogEntry: (i) => logEntries.createLogEntry(db(), i),
+    updateLogEntry: (i) => logEntries.updateLogEntry(db(), i),
     setLogEntryArchived: (i) => logEntries.setLogEntryArchived(db(), i),
 
     createBackup: async () => {

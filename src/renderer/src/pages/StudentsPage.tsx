@@ -155,7 +155,7 @@ function StudentDetail(props: { id: number; courses: Course[]; navigate: Navigat
           <button className="link" onClick={() => navigate('logs')}>Add or manage entries</button>
         </div>
         {logs.error && <p className="field-error" role="alert">{logs.error}</p>}
-        {logs.data && <LogEntryList entries={logs.data} empty="No log entries for this student." onToggleArchive={(e) => void archiveLog(e)} />}
+        {logs.data && <LogEntryList entries={logs.data} empty="No log entries for this student." onToggleArchive={(e) => void archiveLog(e)} onChanged={() => void logs.reload()} />}
       </section>
 
       {editing && (

@@ -186,6 +186,7 @@ export interface Api {
   /** Newest first. Without `studentId`, entries for every student. */
   listLogEntries(input: { archived: boolean; studentId?: number }): Promise<LogEntry[]>
   createLogEntry(input: { studentId: number; title: string; body: string }): Promise<LogEntry>
+  updateLogEntry(input: { id: number; studentId: number; title: string; body: string }): Promise<LogEntry>
   setLogEntryArchived(input: { id: number; archived: boolean }): Promise<void>
 
   createBackup(): Promise<FileResult>
@@ -206,7 +207,7 @@ export const API_METHODS: readonly ApiMethod[] = [
   'listStudents', 'getStudent', 'createStudent', 'updateStudent', 'setStudentArchived',
   'updateStudentComments', 'setEnrollment', 'importRoster',
   'getGradebook', 'createAssignment', 'updateAssignment', 'archiveAssignment', 'setRawScore', 'enrollStudents',
-  'getStudentDashboard', 'listLogEntries', 'createLogEntry', 'setLogEntryArchived', 'createBackup', 'restoreBackup', 'saveTextFile', 'pickRosterFile',
+  'getStudentDashboard', 'listLogEntries', 'createLogEntry', 'updateLogEntry', 'setLogEntryArchived', 'createBackup', 'restoreBackup', 'saveTextFile', 'pickRosterFile',
   'armTypingMacro', 'disarmTypingMacro'
 ]
 
