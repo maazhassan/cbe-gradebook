@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { powerSchoolCsv, rawScoresCsv, stemAveragesCsv } from '@shared/export'
-import type { AverageDecimals, Score } from '@shared/grading'
+import type { AverageDecimals, Score, ScoreRecord } from '@shared/grading'
 import type { CourseGradebook, GradebookAssignment, MacroArmed } from '@shared/types'
 import type { Navigate } from '../App'
 import { ArchivedAssignmentsDialog } from '../components/ArchivedAssignmentsDialog'
@@ -125,15 +125,25 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
   const gb = orderedBook(book.data, assignmentOrder)
   const readOnly = !!gb?.course.archived
 
-  const setScore = async (assignmentId: number, studentId: number, rawScore: Score | null) => {
-    await status.track(window.api.setRawScore({ assignmentId, studentId, rawScore }))
-    book.setData((cur) => ({
-      ...cur!,
-      scores: [
-        ...cur!.scores.filter((s) => !(s.assignmentId === assignmentId && s.studentId === studentId)),
-        ...(rawScore === null ? [] : [{ assignmentId, studentId, rawScore }])
-      ]
-    }))
+  const setScore = async (assignmentId: number, studentId: number, rawScore: Score | null, late: boolean) => {
+    await status.track(window.api.setRawScore({ assignmentId, studentId, rawScore, late }))
+    book.setData((current) => {
+      const cur = current!
+      const previous = cur.scores.find((s) => s.assignmentId === assignmentId && s.studentId === studentId)
+      // The service keeps the submitted date only while the score stays late.
+      const record: ScoreRecord = { assignmentId, studentId, rawScore: rawScore! }
+      if (late) {
+        record.late = true
+        record.submittedDate = previous?.late ? previous.submittedDate ?? null : null
+      }
+      return {
+        ...cur,
+        scores: [
+          ...cur.scores.filter((s) => s !== previous),
+          ...(rawScore === null ? [] : [record])
+        ]
+      }
+    })
   }
 
   const exportCsv = async () => {

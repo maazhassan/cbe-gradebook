@@ -130,6 +130,55 @@ describe('students and enrolment', () => {
   })
 })
 
+describe('late scores', () => {
+  const late = (a: { id: number }, studentId = ctx.ada.id) => {
+    const g = gb.getGradebook(db, ctx.ela.id)
+    return g.scores.find((s) => s.assignmentId === a.id && s.studentId === studentId)
+  }
+  it('stores a late score with its submitted date, which survives re-saving as late', () => {
+    const a = newAssignment()
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8, late: true })
+    expect(late(a)).toEqual({ assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8, late: true, submittedDate: null })
+    gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: '2026-10-27' })
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 9, late: true })
+    expect(late(a)).toMatchObject({ rawScore: 9, late: true, submittedDate: '2026-10-27' })
+    expect(derive(ctx.ela.id, ctx.ada.id).grades).toEqual([4])
+    expect(powerSchoolCsv(gb.getGradebook(db, ctx.ela.id))).toContain('"Lovelace, Ada",4 (L)')
+    expect(rawScoresCsv(gb.getGradebook(db, ctx.ela.id))).toContain('"Lovelace, Ada",9L')
+  })
+  it('becoming on time, missing, exempt or blank clears the late mark and date', () => {
+    const a = newAssignment()
+    for (const next of [7, 'M', 'E', null] as const) {
+      gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8, late: true })
+      gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: '2026-10-27' })
+      gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: next })
+      expect(late(a)?.late).toBeUndefined()
+      expect(late(a)?.submittedDate).toBeUndefined()
+    }
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8, late: true })
+    expect(late(a)?.submittedDate).toBeNull()
+  })
+  it('rejects late without a numeric score, and submitted dates on on-time grades or before the due date', () => {
+    const a = newAssignment()
+    for (const bad of ['M', 'E', null] as const) {
+      expect(() => gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: bad, late: true })).toThrow(/numeric score/)
+    }
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8 })
+    expect(() => gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: '2026-10-27' })).toThrow(/late/)
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8, late: true })
+    expect(() => gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: '2026-10-23' })).toThrow(/before the due date/)
+    expect(() => gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: '2026-02-30' })).toThrow()
+    gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: '2026-10-25' })
+    gb.setSubmittedDate(db, { assignmentId: a.id, studentId: ctx.ada.id, submittedDate: null })
+    expect(late(a)?.submittedDate).toBeNull()
+  })
+  it('shows on the student dashboard', () => {
+    const a = newAssignment()
+    gb.setRawScore(db, { assignmentId: a.id, studentId: ctx.ada.id, rawScore: 8, late: true })
+    expect(gb.getStudentDashboard(db, ctx.ada.id).courses[0]?.scores[0]).toMatchObject({ late: true, submittedDate: null })
+  })
+})
+
 describe('assignments and scores', () => {
   it('new assignments appear with blank scores and keep existing scores when others are added', () => {
     const a = newAssignment()

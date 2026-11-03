@@ -52,7 +52,8 @@ export const schemas = {
   archiveAssignment: z.tuple([id]),
   unarchiveAssignment: z.tuple([id]),
   listArchivedAssignments: z.tuple([id]),
-  setRawScore: z.tuple([z.object({ assignmentId: id, studentId: id, rawScore: z.union([z.number().finite(), z.enum(['M', 'E'])]).nullable() })]),
+  setRawScore: z.tuple([z.object({ assignmentId: id, studentId: id, rawScore: z.union([z.number().finite(), z.enum(['M', 'E'])]).nullable(), late: z.boolean().optional() })]),
+  setSubmittedDate: z.tuple([z.object({ assignmentId: id, studentId: id, submittedDate: z.string().max(10).nullable() })]),
   enrollStudents: z.tuple([z.object({ courseId: id, studentIds: z.array(id).max(500) })]),
   getStudentDashboard: z.tuple([id]),
   listLogEntries: z.tuple([z.object({ archived: z.boolean(), studentId: id.optional() })]),
@@ -64,7 +65,7 @@ export const schemas = {
   saveTextFile: z.tuple([z.object({ defaultName: text(200), content: text(20_000_000) })]),
   pickRosterFile: z.tuple([]),
   armTypingMacro: z.tuple([
-    z.object({ values: z.array(z.string().regex(/^(\d+(\.\d+)?|MI|EX|IN)$/)).max(1000), label: name })
+    z.object({ values: z.array(z.string().regex(/^(\d+(\.\d+)?L?|MI|EX|IN)$/)).max(1000), label: name })
   ]),
   disarmTypingMacro: z.tuple([])
 } satisfies Record<ApiMethod, z.ZodType>

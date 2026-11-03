@@ -15,6 +15,8 @@ export type Score = number | 'M' | 'E'
 
 export const MISSING = 'M'
 export const EXEMPT = 'E'
+/** Typed after a number to mark it late: "26L". */
+export const LATE_SUFFIX = 'L'
 
 /** Blank (null/undefined) and exempt -> blank grade. Missing is a zero. Percentage is never rounded before thresholds. */
 export function toPowerSchoolGrade(
@@ -82,15 +84,25 @@ export interface ScoreRecord {
   assignmentId: number
   studentId: number
   rawScore: Score
+  /** Handed in late. Only ever set together with a numeric score; absent means on time. */
+  late?: boolean
+  /** ISO date a late assignment was handed in. Only meaningful when `late`. */
+  submittedDate?: string | null
 }
 
 export class ScoreIndex {
-  private readonly map = new Map<string, Score>()
+  private readonly map = new Map<string, ScoreRecord>()
   constructor(scores: readonly ScoreRecord[]) {
-    for (const s of scores) this.map.set(`${s.studentId}:${s.assignmentId}`, s.rawScore)
+    for (const s of scores) this.map.set(`${s.studentId}:${s.assignmentId}`, s)
   }
   get(studentId: number, assignmentId: number): Score | null {
-    return this.map.get(`${studentId}:${assignmentId}`) ?? null
+    return this.map.get(`${studentId}:${assignmentId}`)?.rawScore ?? null
+  }
+  isLate(studentId: number, assignmentId: number): boolean {
+    return this.map.get(`${studentId}:${assignmentId}`)?.late === true
+  }
+  submittedDate(studentId: number, assignmentId: number): string | null {
+    return this.map.get(`${studentId}:${assignmentId}`)?.submittedDate ?? null
   }
 }
 
@@ -142,6 +154,20 @@ export function formatDueDate(iso: string): string {
   return new Date(Date.UTC(y!, m! - 1, d!)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
+/** Whole calendar days from `dueDate` to `submittedDate` (both YYYY-MM-DD). Negative if handed in early. */
+export function daysLate(dueDate: string, submittedDate: string): number {
+  const utc = (iso: string): number => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return Date.UTC(y!, m! - 1, d!)
+  }
+  return Math.round((utc(submittedDate) - utc(dueDate)) / 86_400_000)
+}
+
+/** "3 days late" / "1 day late"; empty when not actually after the due date. */
+export function formatDaysLate(days: number): string {
+  return days > 0 ? `${days} day${days === 1 ? '' : 's'} late` : ''
+}
+
 /** `null` (blank), 'M' and 'E' are valid scores. */
 export function validateRawScore(value: unknown, maxPoints: number): string | null {
   if (value === null || value === MISSING || value === EXEMPT) return null
@@ -153,19 +179,27 @@ export function validateRawScore(value: unknown, maxPoints: number): string | nu
 
 const DECIMAL = /^[+]?(\d+(\.\d*)?|\.\d+)$/
 
-export type ScoreParse = { ok: true; value: Score | null } | { ok: false; error: string }
+export type ScoreParse = { ok: true; value: Score | null; late: boolean } | { ok: false; error: string }
 
-/** Parse text typed into a grid cell. Empty text is a blank score, not zero. "M"/"E" (any case) are missing/exempt. */
+/**
+ * Parse text typed into a grid cell. Empty text is a blank score, not zero. "M"/"E" (any case) are missing/exempt.
+ * A trailing "L" marks a late score ("26L"); it needs a numeric score in front of it.
+ */
 export function parseScoreInput(text: string, maxPoints: number): ScoreParse {
-  const trimmed = text.trim()
-  if (trimmed === '') return { ok: true, value: null }
+  let trimmed = text.trim()
+  if (trimmed === '') return { ok: true, value: null, late: false }
   const letter = trimmed.toUpperCase()
-  if (letter === MISSING || letter === EXEMPT) return { ok: true, value: letter }
+  if (letter === MISSING || letter === EXEMPT) return { ok: true, value: letter, late: false }
+  const late = letter.endsWith(LATE_SUFFIX)
+  if (late) {
+    trimmed = trimmed.slice(0, -1).trimEnd()
+    if (trimmed === '') return { ok: false, error: 'A late score needs a number, e.g. 26L.' }
+  }
   if (trimmed.startsWith('-')) return { ok: false, error: 'Score cannot be negative.' }
-  if (!DECIMAL.test(trimmed)) return { ok: false, error: 'Enter a number, M (missing), E (exempt), or leave blank.' }
+  if (!DECIMAL.test(trimmed)) return { ok: false, error: 'Enter a number (add L if late), M (missing), E (exempt), or leave blank.' }
   const value = Number(trimmed)
   const error = validateRawScore(value, maxPoints)
-  return error ? { ok: false, error } : { ok: true, value }
+  return error ? { ok: false, error } : { ok: true, value, late }
 }
 
 /** Same string rules for a form field holding a positive decimal (max points). */
@@ -174,7 +208,14 @@ export function parsePositiveNumber(text: string): number | null {
   return DECIMAL.test(trimmed) ? Number(trimmed) : null
 }
 
-/** Cell/label text for a score: the number, or the letter for a missing/exempt mark. */
-export function formatScore(value: Score | null): string {
-  return value === null ? '' : typeof value === 'number' ? formatNumber(value) : value
+/** Cell/label text for a score: the number (plus "L" when late), or the letter for a missing/exempt mark. */
+export function formatScore(value: Score | null, late = false): string {
+  if (value === null) return ''
+  if (typeof value !== 'number') return value
+  return formatNumber(value) + (late ? LATE_SUFFIX : '')
+}
+
+/** PowerSchool shows a late grade as "3 (L)". */
+export function formatGradeLate(value: PowerSchoolGrade | null, late: boolean): string {
+  return late && value !== null ? `${value} (${LATE_SUFFIX})` : formatGrade(value)
 }

@@ -176,9 +176,18 @@ CREATE TABLE log_entries (
 CREATE INDEX log_entries_student ON log_entries (student_id, archived);
 `
 
+// A late mark only ever goes with a scored (numeric) grade; the service enforces that and clears both columns otherwise.
+// submitted_date is the ISO date a late assignment was handed in (optional; used for "X days late").
+const lateGrades = `
+ALTER TABLE grades ADD COLUMN late INTEGER NOT NULL DEFAULT 0 CHECK (late IN (0, 1));
+ALTER TABLE grades ADD COLUMN submitted_date TEXT
+  CHECK (submitted_date IS NULL OR submitted_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');
+`
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema and seed data', sql: initialSchema },
   { version: 2, name: 'missing and exempt grade statuses', sql: gradeStatus },
   { version: 3, name: 'assignment due dates', sql: assignmentDueDate },
-  { version: 4, name: 'student log entries', sql: logEntries }
+  { version: 4, name: 'student log entries', sql: logEntries },
+  { version: 5, name: 'late grades', sql: lateGrades }
 ]

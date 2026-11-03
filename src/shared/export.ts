@@ -1,4 +1,4 @@
-import { ScoreIndex, formatAverage, formatDueDate, formatGrade, formatNumber, stemAveragesForStudent, toPowerSchoolGrade } from './grading'
+import { ScoreIndex, formatAverage, formatDueDate, formatGradeLate, formatNumber, formatScore, stemAveragesForStudent, toPowerSchoolGrade } from './grading'
 import { toCsv } from './csv'
 import type { CsvCell } from './csv'
 import type { CourseGradebook, GradebookAssignment, RosterStudent } from './types'
@@ -15,7 +15,7 @@ export function rawScoresCsv(gb: CourseGradebook): string {
   const idx = new ScoreIndex(gb.scores)
   const rows: CsvCell[][] = [['Student', ...gb.assignments.map((a) => assignmentHeader(a, gb))]]
   for (const s of gb.students) {
-    rows.push([studentName(s), ...gb.assignments.map((a) => idx.get(s.id, a.id))])
+    rows.push([studentName(s), ...gb.assignments.map((a) => (idx.isLate(s.id, a.id) ? formatScore(idx.get(s.id, a.id), true) : idx.get(s.id, a.id)))])
   }
   return toCsv(rows)
 }
@@ -24,7 +24,7 @@ export function powerSchoolCsv(gb: CourseGradebook): string {
   const idx = new ScoreIndex(gb.scores)
   const rows: CsvCell[][] = [['Student', ...gb.assignments.map((a) => assignmentHeader(a, gb))]]
   for (const s of gb.students) {
-    rows.push([studentName(s), ...gb.assignments.map((a) => formatGrade(toPowerSchoolGrade(idx.get(s.id, a.id), a.maxPoints)))])
+    rows.push([studentName(s), ...gb.assignments.map((a) => formatGradeLate(toPowerSchoolGrade(idx.get(s.id, a.id), a.maxPoints), idx.isLate(s.id, a.id)))])
   }
   return toCsv(rows)
 }

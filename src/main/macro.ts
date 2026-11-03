@@ -13,6 +13,11 @@ import type { MacroArmed, MacroEvent } from '@shared/types'
  * "Type a column into another app": the renderer arms a list of values, the user switches to a browser and presses
  * the hotkey, and we type each value followed by Enter (no Enter after the last). The hotkey is registered only
  * while armed, and is released when it fires, when the timeout passes, or when the user cancels.
+ *
+ * A value ending in "L" is a late score ("26L"). PowerTeacher takes that in two steps: type the score and press Enter,
+ * press Up to return to the cell, then type "la" (the usual Enter after the value then confirms it). Enter does nothing
+ * on the last row, so a late last value uses arrow keys instead (leaving a cell that way commits it, like Enter):
+ * score, Up, Down, "la", Up.
  */
 
 export const MACRO_ACCELERATOR = 'CommandOrControl+Alt+Shift+G'
@@ -164,6 +169,9 @@ function typingErrorMessage(error: unknown): string {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const LATE_VALUE = /^(.+)L$/
+const LATE_TEXT = 'la'
+
 async function typeValues(values: string[]): Promise<void> {
   if (process.platform === 'darwin') return typeMac(values)
   if (process.platform === 'linux') {
@@ -186,7 +194,17 @@ function run(argv) {
   delay(0.05);
   const se = Application('System Events');
   values.forEach((v, i) => {
-    se.keystroke(v);
+    if (v.endsWith('L') && i === values.length - 1) {
+      se.keystroke(v.slice(0, -1)); se.keyCode(126); delay(delay_);
+      se.keyCode(125); delay(delay_);
+      se.keystroke('la'); se.keyCode(126);
+    } else if (v.endsWith('L')) {
+      se.keystroke(v.slice(0, -1)); se.keyCode(36); delay(delay_);
+      se.keyCode(126); delay(delay_); // Up arrow: back to the cell just entered
+      se.keystroke('la');
+    } else {
+      se.keystroke(v);
+    }
     if (i < values.length - 1) { se.keyCode(36); delay(delay_); }
   });
 }`
@@ -197,10 +215,30 @@ async function typeMac(values: string[]): Promise<void> {
 
 /** X11: --clearmodifiers temporarily lifts the still-held hotkey modifiers. */
 async function typeXdotool(values: string[]): Promise<void> {
+  const type = (text: string) => run('xdotool', ['type', '--clearmodifiers', '--delay', '12', '--', text])
+  const press = (key: string) => run('xdotool', ['key', '--clearmodifiers', key])
   for (const [i, v] of values.entries()) {
-    await run('xdotool', ['type', '--clearmodifiers', '--delay', '12', '--', v])
+    const late = LATE_VALUE.exec(v)
+    if (late && i === values.length - 1) {
+      await type(late[1]!)
+      await press('Up')
+      await sleep(ENTRY_DELAY_MS)
+      await press('Down')
+      await sleep(ENTRY_DELAY_MS)
+      await type(LATE_TEXT)
+      await press('Up')
+    } else if (late) {
+      await type(late[1]!)
+      await press('Return')
+      await sleep(ENTRY_DELAY_MS)
+      await press('Up')
+      await sleep(ENTRY_DELAY_MS)
+      await type(LATE_TEXT)
+    } else {
+      await type(v)
+    }
     if (i < values.length - 1) {
-      await run('xdotool', ['key', '--clearmodifiers', 'Return'])
+      await press('Return')
       await sleep(ENTRY_DELAY_MS)
     }
   }
@@ -255,10 +293,31 @@ async function typeYdotool(values: string[]): Promise<void> {
   if (daemon.error) throw new AppError(daemon.error)
   if (!existsSync(YDOTOOL_SOCKET)) throw new AppError('Typing failed: ydotoold did not start in time.')
   const options = { env: { ...process.env, YDOTOOL_SOCKET } }
+  const type = (text: string) => run('ydotool', ['type', '--key-delay', '12', '--', text], options)
+  const [KEY_ENTER, KEY_UP, KEY_DOWN] = [28, 103, 108] // Linux input keycodes
+  const press = (code: number) => run('ydotool', ['key', `${code}:1`, `${code}:0`], options)
   for (const [i, v] of values.entries()) {
-    await run('ydotool', ['type', '--key-delay', '12', '--', v], options)
+    const late = LATE_VALUE.exec(v)
+    if (late && i === values.length - 1) {
+      await type(late[1]!)
+      await press(KEY_UP)
+      await sleep(ENTRY_DELAY_MS)
+      await press(KEY_DOWN)
+      await sleep(ENTRY_DELAY_MS)
+      await type(LATE_TEXT)
+      await press(KEY_UP)
+    } else if (late) {
+      await type(late[1]!)
+      await press(KEY_ENTER)
+      await sleep(ENTRY_DELAY_MS)
+      await press(KEY_UP)
+      await sleep(ENTRY_DELAY_MS)
+      await type(LATE_TEXT)
+    } else {
+      await type(v)
+    }
     if (i < values.length - 1) {
-      await run('ydotool', ['key', '28:1', '28:0'], options)
+      await press(KEY_ENTER)
       await sleep(ENTRY_DELAY_MS)
     }
   }

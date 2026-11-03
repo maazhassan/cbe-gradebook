@@ -147,7 +147,7 @@ function StudentDetail(props: { id: number; courses: Course[]; navigate: Navigat
       </section>
 
       <h2 className="section-title">Grades <span className="muted small">read-only · enter scores in each course’s Raw Scores tab</span></h2>
-      <StudentGrades dashboard={dash.data} navigate={navigate} />
+      <StudentGrades dashboard={dash.data} navigate={navigate} onChanged={dash.reload} />
 
       <section className="panel" aria-labelledby="logs-h">
         <div className="panel-head">

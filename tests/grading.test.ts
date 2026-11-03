@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ScoreIndex, formatAverage, parseScoreInput, stemAveragesForStudent, toPowerSchoolGrade,
+  ScoreIndex, daysLate, formatAverage, formatDaysLate, formatGradeLate, formatScore, parseScoreInput, stemAveragesForStudent, toPowerSchoolGrade,
   validateMaxPoints, validateRawScore, validateWeight, weightedAverage
 } from '../src/shared/grading'
 
@@ -112,15 +112,35 @@ describe('validation', () => {
     for (const bad of [-1, 10.01, NaN, Infinity]) expect(validateRawScore(bad, 10)).not.toBeNull()
   })
   it('cell parsing', () => {
-    expect(parseScoreInput('', 10)).toEqual({ ok: true, value: null })
-    expect(parseScoreInput('  ', 10)).toEqual({ ok: true, value: null })
-    expect(parseScoreInput('0', 10)).toEqual({ ok: true, value: 0 })
-    expect(parseScoreInput('7.5', 10)).toEqual({ ok: true, value: 7.5 })
-    expect(parseScoreInput('10', 10)).toEqual({ ok: true, value: 10 })
-    expect(parseScoreInput(' m ', 10)).toEqual({ ok: true, value: 'M' })
-    expect(parseScoreInput('e', 10)).toEqual({ ok: true, value: 'E' })
+    expect(parseScoreInput('', 10)).toEqual({ ok: true, value: null, late: false })
+    expect(parseScoreInput('  ', 10)).toEqual({ ok: true, value: null, late: false })
+    expect(parseScoreInput('0', 10)).toEqual({ ok: true, value: 0, late: false })
+    expect(parseScoreInput('7.5', 10)).toEqual({ ok: true, value: 7.5, late: false })
+    expect(parseScoreInput('10', 10)).toEqual({ ok: true, value: 10, late: false })
+    expect(parseScoreInput(' m ', 10)).toEqual({ ok: true, value: 'M', late: false })
+    expect(parseScoreInput('e', 10)).toEqual({ ok: true, value: 'E', late: false })
     expect(toPowerSchoolGrade('M', 10)).toBe(1)
     expect(toPowerSchoolGrade('E', 10)).toBeNull()
+    expect(parseScoreInput('26L', 30)).toEqual({ ok: true, value: 26, late: true })
+    expect(parseScoreInput(' 7.5 l ', 10)).toEqual({ ok: true, value: 7.5, late: true })
+    expect(parseScoreInput('0L', 10)).toEqual({ ok: true, value: 0, late: true })
+    expect(formatScore(26, true)).toBe('26L')
+    expect(formatScore('M', true)).toBe('M')
+    expect(formatGradeLate(3, true)).toBe('3 (L)')
+    expect(formatGradeLate(3, false)).toBe('3')
+    for (const bad of ['L', 'ML', 'EL', '11L', '-1L', 'LL']) expect(parseScoreInput(bad, 10).ok).toBe(false)
     for (const bad of ['-1', 'abc', 'Infinity', '1e3', '11', '1,5', 'NaN']) expect(parseScoreInput(bad, 10).ok).toBe(false)
+  })
+})
+
+describe('days late', () => {
+  it('counts calendar days, across months and years', () => {
+    expect(daysLate('2026-10-24', '2026-10-27')).toBe(3)
+    expect(daysLate('2026-10-30', '2026-11-02')).toBe(3)
+    expect(daysLate('2026-12-31', '2027-01-01')).toBe(1)
+    expect(daysLate('2026-10-24', '2026-10-24')).toBe(0)
+    expect(formatDaysLate(1)).toBe('1 day late')
+    expect(formatDaysLate(3)).toBe('3 days late')
+    expect(formatDaysLate(0)).toBe('')
   })
 })

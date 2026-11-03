@@ -16,6 +16,17 @@ function toScore(rawScore: number, status: GradeStatus): Score {
   return status === 'missing' ? 'M' : status === 'exempt' ? 'E' : rawScore
 }
 
+interface GradeRow { assignment_id: number; student_id: number; raw_score: number; status: GradeStatus; late: number; submitted_date: string | null }
+
+function toRecord(g: GradeRow): ScoreRecord {
+  const record: ScoreRecord = { assignmentId: g.assignment_id, studentId: g.student_id, rawScore: toScore(g.raw_score, g.status) }
+  if (g.late === 1) {
+    record.late = true
+    record.submittedDate = g.submitted_date
+  }
+  return record
+}
+
 function loadAssignments(db: Db, courseId: number, archived = 0): GradebookAssignment[] {
   const rows = db
     .prepare('SELECT * FROM assignments WHERE course_id = ? AND archived = ? ORDER BY sort_order, id')
@@ -53,10 +64,10 @@ export function getGradebook(db: Db, courseId: number): CourseGradebook {
   ).map((s): RosterStudent => ({ id: s.id, firstName: s.first_name, lastName: s.last_name }))
   const scores = (
     db
-      .prepare(`SELECT g.assignment_id, g.student_id, g.raw_score, g.status FROM grades g JOIN assignments a ON a.id = g.assignment_id
+      .prepare(`SELECT g.assignment_id, g.student_id, g.raw_score, g.status, g.late, g.submitted_date FROM grades g JOIN assignments a ON a.id = g.assignment_id
         WHERE a.course_id = ? AND a.archived = 0`)
-      .all(courseId) as { assignment_id: number; student_id: number; raw_score: number; status: GradeStatus }[]
-  ).map((g): ScoreRecord => ({ assignmentId: g.assignment_id, studentId: g.student_id, rawScore: toScore(g.raw_score, g.status) }))
+      .all(courseId) as unknown as GradeRow[]
+  ).map(toRecord)
   return { course, assignments, students, scores, stems: loadCourseStems(db, course.subjectId, assignments) }
 }
 
@@ -143,12 +154,15 @@ export function unarchiveAssignment(db: Db, id: number): void {
   db.prepare(`UPDATE assignments SET archived = 0, updated_at = ${NOW} WHERE id = ?`).run(id)
 }
 
-export function setRawScore(db: Db, input: { assignmentId: number; studentId: number; rawScore: Score | null }): void {
+/** A late mark needs a numeric score. Changing a score to on time (or to blank/M/E) also drops the submitted date. */
+export function setRawScore(db: Db, input: { assignmentId: number; studentId: number; rawScore: Score | null; late?: boolean }): void {
   transaction(db, () => {
     const assignment = getAssignmentRow(db, input.assignmentId)
     assertCourseOpen(db, assignment.course_id)
     const error = validateRawScore(input.rawScore, assignment.max_points)
     if (error) throw new AppError(error)
+    const late = input.late === true
+    if (late && typeof input.rawScore !== 'number') throw new AppError('A late mark needs a numeric score.')
     const enrolled = db
       .prepare(`SELECT 1 FROM course_enrollments e JOIN students s ON s.id = e.student_id
         WHERE e.course_id = ? AND e.student_id = ? AND e.active = 1 AND s.archived = 0`)
@@ -160,11 +174,27 @@ export function setRawScore(db: Db, input: { assignmentId: number; studentId: nu
       const status: GradeStatus = input.rawScore === 'M' ? 'missing' : input.rawScore === 'E' ? 'exempt' : 'scored'
       const raw = typeof input.rawScore === 'number' ? input.rawScore : 0
       db.prepare(
-        `INSERT INTO grades (assignment_id, student_id, raw_score, status) VALUES (?, ?, ?, ?)
-         ON CONFLICT (assignment_id, student_id) DO UPDATE SET raw_score = excluded.raw_score, status = excluded.status, updated_at = ${NOW}`
-      ).run(input.assignmentId, input.studentId, raw, status)
+        `INSERT INTO grades (assignment_id, student_id, raw_score, status, late) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (assignment_id, student_id) DO UPDATE SET raw_score = excluded.raw_score, status = excluded.status,
+           late = excluded.late, submitted_date = CASE WHEN excluded.late = 1 THEN grades.submitted_date END, updated_at = ${NOW}`
+      ).run(input.assignmentId, input.studentId, raw, status, late ? 1 : 0)
     }
   })
+}
+
+/** Records (or clears, with null) the date a late assignment was handed in. Only late grades have one. */
+export function setSubmittedDate(db: Db, input: { assignmentId: number; studentId: number; submittedDate: string | null }): void {
+  const assignment = getAssignmentRow(db, input.assignmentId)
+  assertCourseOpen(db, assignment.course_id)
+  if (input.submittedDate !== null) {
+    const error = validateDueDate(input.submittedDate)
+    if (error) throw new AppError(error.replace('Due date', 'Submitted date'))
+    if (input.submittedDate < assignment.due_date) throw new AppError('Submitted date cannot be before the due date.')
+  }
+  const { changes } = db
+    .prepare(`UPDATE grades SET submitted_date = ?, updated_at = ${NOW} WHERE assignment_id = ? AND student_id = ? AND late = 1`)
+    .run(input.submittedDate, input.assignmentId, input.studentId)
+  if (changes === 0) throw new AppError('Only late assignments have a submitted date.')
 }
 
 export function getStudentDashboard(db: Db, studentId: number): StudentDashboard {
@@ -174,10 +204,10 @@ export function getStudentDashboard(db: Db, studentId: number): StudentDashboard
     const assignments = loadAssignments(db, course.id)
     const scores = (
       db
-        .prepare(`SELECT g.assignment_id, g.raw_score, g.status FROM grades g JOIN assignments a ON a.id = g.assignment_id
+        .prepare(`SELECT g.assignment_id, g.student_id, g.raw_score, g.status, g.late, g.submitted_date FROM grades g JOIN assignments a ON a.id = g.assignment_id
           WHERE a.course_id = ? AND a.archived = 0 AND g.student_id = ?`)
-        .all(course.id, studentId) as { assignment_id: number; raw_score: number; status: GradeStatus }[]
-    ).map((g): ScoreRecord => ({ assignmentId: g.assignment_id, studentId, rawScore: toScore(g.raw_score, g.status) }))
+        .all(course.id, studentId) as unknown as GradeRow[]
+    ).map(toRecord)
     return { course, enrollmentActive: enrollment.active, assignments, scores, stems: loadCourseStems(db, course.subjectId, assignments) }
   })
   return { student, courses }

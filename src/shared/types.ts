@@ -180,7 +180,10 @@ export interface Api {
   archiveAssignment(id: number): Promise<void>
   unarchiveAssignment(id: number): Promise<void>
   listArchivedAssignments(courseId: number): Promise<GradebookAssignment[]>
-  setRawScore(input: { assignmentId: number; studentId: number; rawScore: Score | null }): Promise<void>
+  /** `late` (default false) marks the score as handed in late; it requires a numeric score. */
+  setRawScore(input: { assignmentId: number; studentId: number; rawScore: Score | null; late?: boolean }): Promise<void>
+  /** Only valid for a late grade. `null` clears the date. */
+  setSubmittedDate(input: { assignmentId: number; studentId: number; submittedDate: string | null }): Promise<void>
   enrollStudents(input: { courseId: number; studentIds: number[] }): Promise<void>
 
   getStudentDashboard(id: number): Promise<StudentDashboard>
@@ -210,7 +213,7 @@ export const API_METHODS: readonly ApiMethod[] = [
   'updateStudentComments', 'setEnrollment', 'importRoster',
   'getGradebook', 'createAssignment', 'updateAssignment', 'archiveAssignment', 'unarchiveAssignment', 'listArchivedAssignments', 'setRawScore', 'enrollStudents',
   'getStudentDashboard', 'listLogEntries', 'createLogEntry', 'updateLogEntry', 'setLogEntryArchived', 'createBackup', 'restoreBackup', 'saveTextFile', 'pickRosterFile',
-  'armTypingMacro', 'disarmTypingMacro'
+  'setSubmittedDate', 'armTypingMacro', 'disarmTypingMacro'
 ]
 
 export type ApiEnvelope<T> = { ok: true; data: T } | { ok: false; error: string }

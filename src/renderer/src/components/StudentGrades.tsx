@@ -1,7 +1,8 @@
-import { ScoreIndex, formatAverage, formatDueDate, formatGrade, formatNumber, stemAveragesForStudent, toPowerSchoolGrade } from '@shared/grading'
+import { ScoreIndex, daysLate, formatAverage, formatDaysLate, formatDueDate, formatGrade, formatNumber, stemAveragesForStudent, toPowerSchoolGrade } from '@shared/grading'
 import type { GradebookAssignment, StudentDashboard } from '@shared/types'
 import type { Navigate } from '../App'
-import { getAssignmentOrder, sortAssignments } from '../hooks'
+import { errorMessage, getAssignmentOrder, sortAssignments } from '../hooks'
+import { useStatus } from './Status'
 
 const marked = (assignments: GradebookAssignment[], idx: ScoreIndex, studentId: number, mark: 'M' | 'E'): GradebookAssignment[] =>
   assignments.filter((a) => idx.get(studentId, a.id) === mark)
@@ -16,8 +17,52 @@ function MarkedList({ title, note, cls, items }: { title: string; note: string; 
   )
 }
 
-/** Read-only grades for every course the student is or was in. Uses the same grading functions as the gradebook. */
-export function StudentGrades({ dashboard, navigate }: { dashboard: StudentDashboard; navigate: Navigate }) {
+/** Late assignments, each with an optional submitted date that drives the "X days late" count. */
+function LateList({ items, idx, studentId, editable, onChanged }: {
+  items: GradebookAssignment[]
+  idx: ScoreIndex
+  studentId: number
+  editable: boolean
+  onChanged: () => Promise<void>
+}) {
+  const status = useStatus()
+  if (items.length === 0) return null
+  const save = (assignmentId: number, submittedDate: string | null) =>
+    status.track(window.api.setSubmittedDate({ assignmentId, studentId, submittedDate }).then(onChanged)).catch((e: unknown) => status.fail(errorMessage(e)))
+  return (
+    <>
+      <h4>Late assignments ({items.length}) <span className="muted small">Scored as handed in. Add the date submitted to see how late.</span></h4>
+      <ul className="mark-list is-late">
+        {items.map((a) => {
+          const submitted = idx.submittedDate(studentId, a.id)
+          const late = submitted ? formatDaysLate(daysLate(a.dueDate, submitted)) : ''
+          return (
+            <li key={a.id}>
+              <div className="late-row">
+                <span>{a.name} <span className="muted small">due {formatDueDate(a.dueDate)}</span></span>
+                <label className="small">
+                  Submitted{' '}
+                  <input
+                    type="date"
+                    value={submitted ?? ''}
+                    min={a.dueDate}
+                    disabled={!editable}
+                    aria-label={`Date submitted: ${a.name}`}
+                    onChange={(e) => e.target.value !== (submitted ?? '') && void save(a.id, e.target.value || null)}
+                  />
+                </label>
+                {late && <strong>{late}</strong>}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </>
+  )
+}
+
+/** Grades for every course the student is or was in. Uses the same grading functions as the gradebook. Only late submission dates can be edited here. */
+export function StudentGrades({ dashboard, navigate, onChanged }: { dashboard: StudentDashboard; navigate: Navigate; onChanged: () => Promise<void> }) {
   const studentId = dashboard.student.id
   const order = getAssignmentOrder()
   if (dashboard.courses.length === 0) {
@@ -59,7 +104,7 @@ export function StudentGrades({ dashboard, navigate }: { dashboard: StudentDashb
                           {score === null ? <span className="muted">Not yet graded</span>
                             : score === 'M' ? <span className="is-missing mark-tag">Missing</span>
                             : score === 'E' ? <span className="is-exempt mark-tag">Exempt</span>
-                            : `${formatNumber(score)} / ${formatNumber(a.maxPoints)}`}
+                            : <>{formatNumber(score)} / {formatNumber(a.maxPoints)}{idx.isLate(studentId, a.id) && <> <span className="is-late mark-tag">Late</span></>}</>}
                         </td>
                         <td className={grade ? `value-cell g${grade}` : 'value-cell'}>{formatGrade(grade)}</td>
                       </tr>
@@ -69,6 +114,7 @@ export function StudentGrades({ dashboard, navigate }: { dashboard: StudentDashb
               </table>
             )}
             <MarkedList title="Missing assignments" note="Counted as 0 in the averages below." cls="is-missing" items={marked(assignments, idx, studentId, 'M')} />
+            <LateList items={assignments.filter((a) => idx.isLate(studentId, a.id))} idx={idx} studentId={studentId} editable={!c.course.archived} onChanged={onChanged} />
             <MarkedList title="Exempt assignments" note="Excluded from the averages below." cls="is-exempt" items={marked(assignments, idx, studentId, 'E')} />
             <h4>Weighted stem averages</h4>
             <table className="list-table compact stem-table">

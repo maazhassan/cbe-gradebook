@@ -54,6 +54,7 @@ function buildHandlers(): Handlers {
     unarchiveAssignment: (i) => gradebook.unarchiveAssignment(db(), i),
     listArchivedAssignments: (i) => gradebook.listArchivedAssignments(db(), i),
     setRawScore: (i) => gradebook.setRawScore(db(), i),
+    setSubmittedDate: (i) => gradebook.setSubmittedDate(db(), i),
     enrollStudents: ({ courseId, studentIds }) => {
       for (const studentId of studentIds) students.setEnrollment(db(), { studentId, courseId, active: true })
     },

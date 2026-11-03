@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  ScoreIndex, formatAverage, formatDueDate, formatGrade, formatNumber, formatScore, parseScoreInput, stemAveragesForStudent, toPowerSchoolGrade
+  ScoreIndex, formatAverage, formatDueDate, formatGradeLate, formatNumber, formatScore, parseScoreInput, stemAveragesForStudent, toPowerSchoolGrade
 } from '@shared/grading'
 import { ResizeHandle, STUDENT_COL, assignmentCol, stemCol, useColumnWidths } from './ColumnResize'
 import type { ColumnWidths } from './ColumnResize'
@@ -58,9 +58,9 @@ export interface MacroControls {
   onCancel: () => void
 }
 
-/** What the macro types for a cell: the number, or MI (missing), EX (exempt), IN (blank). */
-const macroValue = (score: Score | null, number: () => string): string =>
-  score === null ? 'IN' : score === 'M' ? 'MI' : score === 'E' ? 'EX' : number()
+/** What the macro types for a cell: the number (with a trailing L when late), or MI (missing), EX (exempt), IN (blank). */
+const macroValue = (score: Score | null, late: boolean, number: () => string): string =>
+  score === null ? 'IN' : score === 'M' ? 'MI' : score === 'E' ? 'EX' : number() + (late ? 'L' : '')
 
 function MacroButton({ macro, macroKey, label, values }: { macro: MacroControls; macroKey: string; label: string; values: () => string[] }) {
   const armed = macro.armedKey === macroKey
@@ -106,27 +106,29 @@ function AssignmentHeader({ gb, a, empty, onEdit, widths, macro }: { gb: CourseG
   )
 }
 
-const markClass = (v: Score | null): string => (v === null ? 'is-empty' : v === 'M' ? 'is-missing' : v === 'E' ? 'is-exempt' : '')
+const markClass = (v: Score | null, late = false): string =>
+  v === null ? 'is-empty' : v === 'M' ? 'is-missing' : v === 'E' ? 'is-exempt' : late ? 'is-late' : ''
 
 function ScoreCell(props: {
   value: Score | null
+  late: boolean
   max: number
   label: string
   row: number
   col: number
   readOnly: boolean
-  onCommit: (value: Score | null) => Promise<void>
+  onCommit: (value: Score | null, late: boolean) => Promise<void>
 }) {
-  const { value, max, label, row, col, readOnly, onCommit } = props
-    const [draft, setDraft] = useState(formatScore(value))
+  const { value, late, max, label, row, col, readOnly, onCommit } = props
+  const [draft, setDraft] = useState(formatScore(value, late))
   const [error, setError] = useState<string | null>(null)
-  const saved = useRef(value)
+  const saved = useRef({ value, late })
 
   useEffect(() => {
-    saved.current = value
-    setDraft(formatScore(value))
+    saved.current = { value, late }
+    setDraft(formatScore(value, late))
     setError(null)
-  }, [value])
+  }, [value, late])
 
   const commit = async (): Promise<boolean> => {
     const parsed = parseScoreInput(draft, max)
@@ -135,14 +137,14 @@ function ScoreCell(props: {
       return false
     }
     setError(null)
-    if (parsed.value === saved.current) {
-      setDraft(formatScore(parsed.value))
+    if (parsed.value === saved.current.value && parsed.late === saved.current.late) {
+      setDraft(formatScore(parsed.value, parsed.late))
       return true
     }
     const previous = saved.current
-    saved.current = parsed.value
+    saved.current = { value: parsed.value, late: parsed.late }
     try {
-      await onCommit(parsed.value)
+      await onCommit(parsed.value, parsed.late)
       return true
     } catch (e) {
       saved.current = previous
@@ -155,7 +157,7 @@ function ScoreCell(props: {
     document.querySelector<HTMLInputElement>(`input[data-cell="${r}-${c}"]`)?.focus()
 
   return (
-    <td className={`score-cell ${markClass(value)}${error ? ' has-error' : ''}`}>
+    <td className={`score-cell ${markClass(value, late)}${error ? ' has-error' : ''}`}>
       <input
         data-cell={`${row}-${col}`}
         value={draft}
@@ -164,7 +166,7 @@ function ScoreCell(props: {
         spellCheck={false}
         disabled={readOnly}
         aria-label={value === null ? `${label} (empty)` : label}
-        title={value === null ? 'No grade entered. Enter a score, M (missing) or E (exempt).' : value === 'M' ? 'Missing: counts as 0' : value === 'E' ? 'Exempt: excluded from grade' : undefined}
+        title={value === null ? 'No grade entered. Enter a score (add L if late), M (missing) or E (exempt).' : value === 'M' ? 'Missing: counts as 0' : value === 'E' ? 'Exempt: excluded from grade' : late ? 'Late' : undefined}
         aria-invalid={error ? true : undefined}
         onChange={(e) => {
           setDraft(e.target.value)
@@ -177,7 +179,7 @@ function ScoreCell(props: {
             e.preventDefault()
             void commit().then((ok) => ok && focusCell(row + 1, col))
           } else if (e.key === 'Escape') {
-            setDraft(formatScore(saved.current))
+            setDraft(formatScore(saved.current.value, saved.current.late))
             setError(null)
           } else if (e.key === 'ArrowDown') {
             e.preventDefault()
@@ -197,7 +199,7 @@ export function RawScoresGrid(props: {
   gb: CourseGradebook
   readOnly: boolean
   onEditAssignment: (a: GradebookAssignment) => void
-  onSetScore: (assignmentId: number, studentId: number, rawScore: Score | null) => Promise<void>
+  onSetScore: (assignmentId: number, studentId: number, rawScore: Score | null, late: boolean) => Promise<void>
   macro: MacroControls
   onStudent: OnStudent
 }) {
@@ -219,7 +221,7 @@ export function RawScoresGrid(props: {
                 macro={
                   <MacroButton
                     macro={macro} macroKey={`raw-${a.id}`} label={`${a.name} (raw scores)`}
-                    values={() => gb.students.map((s) => macroValue(idx.get(s.id, a.id), () => formatScore(idx.get(s.id, a.id))))}
+                    values={() => gb.students.map((s) => macroValue(idx.get(s.id, a.id), idx.isLate(s.id, a.id), () => formatScore(idx.get(s.id, a.id))))}
                   />
                 }
               />
@@ -234,12 +236,13 @@ export function RawScoresGrid(props: {
                 <ScoreCell
                   key={a.id}
                   value={idx.get(s.id, a.id)}
+                  late={idx.isLate(s.id, a.id)}
                   max={a.maxPoints}
                   row={r}
                   col={c}
                   readOnly={readOnly}
                   label={`${fullName(s)}, ${a.name}, out of ${formatNumber(a.maxPoints)}`}
-                  onCommit={(v) => onSetScore(a.id, s.id, v)}
+                  onCommit={(v, late) => onSetScore(a.id, s.id, v, late)}
                 />
               ))}
             </tr>
@@ -270,7 +273,7 @@ export function PowerSchoolGrid({ gb, macro, onStudent }: { gb: CourseGradebook;
                     macro={macro} macroKey={`ps-${a.id}`} label={`${a.name} (PowerSchool grades)`}
                     values={() => gb.students.map((s) => {
                       const score = idx.get(s.id, a.id)
-                      return macroValue(score, () => formatGrade(toPowerSchoolGrade(score, a.maxPoints)))
+                      return macroValue(score, idx.isLate(s.id, a.id), () => formatGradeLate(toPowerSchoolGrade(score, a.maxPoints), false))
                     })}
                   />
                 }
@@ -285,10 +288,11 @@ export function PowerSchoolGrid({ gb, macro, onStudent }: { gb: CourseGradebook;
               {gb.assignments.map((a) => {
                 const score = idx.get(s.id, a.id)
                 const grade = toPowerSchoolGrade(score, a.maxPoints)
+                const late = idx.isLate(s.id, a.id)
                 const cls = grade && score !== 'M' ? `value-cell g${grade}` : `value-cell ${markClass(score)}`
                 return (
-                  <td key={a.id} className={cls} title={score === null ? 'No grade entered' : score === 'M' ? 'Missing: counts as 0' : score === 'E' ? 'Exempt: excluded from grade' : undefined}>
-                    {score === 'E' ? 'E' : score === 'M' ? '1 (M)' : formatGrade(grade)}
+                  <td key={a.id} className={late ? `${cls} is-late` : cls} title={score === null ? 'No grade entered' : score === 'M' ? 'Missing: counts as 0' : score === 'E' ? 'Exempt: excluded from grade' : late ? 'Late' : undefined}>
+                    {score === 'E' ? 'E' : score === 'M' ? '1 (M)' : formatGradeLate(grade, late)}
                   </td>
                 )
               })}
