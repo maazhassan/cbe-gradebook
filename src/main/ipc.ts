@@ -65,7 +65,7 @@ export const schemas = {
   saveTextFile: z.tuple([z.object({ defaultName: text(200), content: text(20_000_000) })]),
   pickRosterFile: z.tuple([]),
   armTypingMacro: z.tuple([
-    z.object({ values: z.array(z.string().regex(/^(\d+(\.\d+)?L?|MI|EX|IN)$/)).max(1000), label: name })
+    z.object({ values: z.array(z.string().regex(/^(\d+(\.\d+)?L?|MI|EX)$/)).max(1000), stems: z.number().int().min(0).max(50), label: name })
   ]),
   disarmTypingMacro: z.tuple([])
 } satisfies Record<ApiMethod, z.ZodType>

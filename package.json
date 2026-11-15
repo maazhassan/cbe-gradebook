@@ -39,7 +39,7 @@
     "zod": "4.6.7"
   },
   "private": true,
-  "author": "Gradebook",
+  "author": "Maaz Hassan",
   "license": "UNLICENSED",
   "build": {
     "appId": "ca.local.cbegradebook",

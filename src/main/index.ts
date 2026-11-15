@@ -114,9 +114,9 @@ function buildHandlers(): Handlers {
       if (statSync(file).size > 5_000_000) throw new AppError('That file is too large to be a class roster.')
       return { name: file.split(/[\\/]/).pop() ?? file, text: readFileSync(file, 'utf8') }
     },
-    armTypingMacro: ({ values, label }) => {
+    armTypingMacro: ({ values, stems, label }) => {
       if (!mainWindow) throw new AppError('The gradebook window is not open.')
-      return armMacro(values, label, mainWindow.webContents)
+      return armMacro(values, stems, label, mainWindow.webContents)
     },
     disarmTypingMacro: () => cancelMacro()
   }

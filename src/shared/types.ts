@@ -200,7 +200,7 @@ export interface Api {
   pickRosterFile(): Promise<PickedFile>
 
   /** Load values to type into another app when the global hotkey is pressed. Replaces any previously armed column. */
-  armTypingMacro(input: { values: string[]; label: string }): Promise<MacroArmed>
+  armTypingMacro(input: { values: string[]; stems: number; label: string }): Promise<MacroArmed>
   disarmTypingMacro(): Promise<void>
 }
 

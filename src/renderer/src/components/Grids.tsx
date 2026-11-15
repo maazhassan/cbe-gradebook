@@ -51,25 +51,28 @@ function StudentCell({ s, onStudent }: { s: RosterStudent; onStudent: OnStudent 
   )
 }
 
-/** Arming state for the "type this column into another app" macro, shared by both assignment grids. */
+/** Arming state for the "type this assignment into another app" macro on the PowerSchool grid. */
 export interface MacroControls {
   armedKey: string | null
-  onArm: (key: string, label: string, values: string[]) => void
+  onArm: (key: string, label: string, values: string[], stems: number) => void
   onCancel: () => void
 }
 
-/** What the macro types for a cell: the number (with a trailing L when late), or MI (missing), EX (exempt), IN (blank). */
-const macroValue = (score: Score | null, late: boolean, number: () => string): string =>
-  score === null ? 'IN' : score === 'M' ? 'MI' : score === 'E' ? 'EX' : number() + (late ? 'L' : '')
+/** What the macro types for a graded cell: the number (with a trailing L when late), or MI (missing) or EX (exempt). */
+const macroValue = (score: Score, late: boolean, number: () => string): string =>
+  score === 'M' ? 'MI' : score === 'E' ? 'EX' : number() + (late ? 'L' : '')
 
-function MacroButton({ macro, macroKey, label, values }: { macro: MacroControls; macroKey: string; label: string; values: () => string[] }) {
+function MacroButton({ macro, macroKey, label, stems, disabledReason, values }: {
+  macro: MacroControls; macroKey: string; label: string; stems: number; disabledReason: string | null; values: () => string[]
+}) {
   const armed = macro.armedKey === macroKey
   return (
     <button
       className={armed ? 'macro-btn armed' : 'macro-btn'}
       aria-pressed={armed}
-      onClick={() => (armed ? macro.onCancel() : macro.onArm(macroKey, label, values()))}
-      title={armed ? 'Ready to type. Switch to the browser and press the hotkey. Click to cancel.' : 'Load this column, then type it into another app (e.g. PowerSchool) with a hotkey'}
+      disabled={!!disabledReason}
+      onClick={() => (armed ? macro.onCancel() : macro.onArm(macroKey, label, values(), stems))}
+      title={disabledReason ?? (armed ? 'Ready to type. Switch to the browser and press the hotkey. Click to cancel.' : 'Load this assignment, then type the whole sheet into another app (e.g. PowerTeacher) with a hotkey')}
     >
       {armed ? '● Armed' : '⌨ Type'}
     </button>
@@ -109,7 +112,7 @@ function AssignmentHeader({ gb, a, empty, onEdit, widths, macro }: { gb: CourseG
 const markClass = (v: Score | null, late = false): string =>
   v === null ? 'is-empty' : v === 'M' ? 'is-missing' : v === 'E' ? 'is-exempt' : late ? 'is-late' : ''
 
-function ScoreCell(props: {
+export function ScoreCell(props: {
   value: Score | null
   late: boolean
   max: number
@@ -118,8 +121,11 @@ function ScoreCell(props: {
   col: number
   readOnly: boolean
   onCommit: (value: Score | null, late: boolean) => Promise<void>
+  /** Focus the input on mount and report when editing ends (Enter, Escape or leaving the cell). Used for click-to-edit cells. */
+  autoFocus?: boolean
+  onFinish?: () => void
 }) {
-  const { value, late, max, label, row, col, readOnly, onCommit } = props
+  const { value, late, max, label, row, col, readOnly, onCommit, autoFocus, onFinish } = props
   const [draft, setDraft] = useState(formatScore(value, late))
   const [error, setError] = useState<string | null>(null)
   const saved = useRef({ value, late })
@@ -165,6 +171,7 @@ function ScoreCell(props: {
         autoComplete="off"
         spellCheck={false}
         disabled={readOnly}
+        autoFocus={autoFocus}
         aria-label={value === null ? `${label} (empty)` : label}
         title={value === null ? 'No grade entered. Enter a score (add L if late), M (missing) or E (exempt).' : value === 'M' ? 'Missing: counts as 0' : value === 'E' ? 'Exempt: excluded from grade' : late ? 'Late' : undefined}
         aria-invalid={error ? true : undefined}
@@ -173,14 +180,17 @@ function ScoreCell(props: {
           setError(null)
         }}
         onFocus={(e) => e.target.select()}
-        onBlur={() => void commit()}
+        onBlur={() => void commit().then(() => onFinish?.())}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
-            void commit().then((ok) => ok && focusCell(row + 1, col))
+            void commit().then((ok) => ok && (onFinish ? onFinish() : focusCell(row + 1, col)))
           } else if (e.key === 'Escape') {
             setDraft(formatScore(saved.current.value, saved.current.late))
             setError(null)
+            onFinish?.()
+          } else if (onFinish) {
+            return
           } else if (e.key === 'ArrowDown') {
             e.preventDefault()
             focusCell(row + 1, col)
@@ -200,10 +210,9 @@ export function RawScoresGrid(props: {
   readOnly: boolean
   onEditAssignment: (a: GradebookAssignment) => void
   onSetScore: (assignmentId: number, studentId: number, rawScore: Score | null, late: boolean) => Promise<void>
-  macro: MacroControls
   onStudent: OnStudent
 }) {
-  const { gb, readOnly, onEditAssignment, onSetScore, macro, onStudent } = props
+  const { gb, readOnly, onEditAssignment, onSetScore, onStudent } = props
   const idx = new ScoreIndex(gb.scores)
   const widths = useColumnWidths()
   const cols = assignmentCols(gb)
@@ -218,12 +227,6 @@ export function RawScoresGrid(props: {
             {gb.assignments.map((a) => (
               <AssignmentHeader
                 key={a.id} gb={gb} a={a} empty={emptyCount(a.id)} widths={widths} onEdit={readOnly ? undefined : onEditAssignment}
-                macro={
-                  <MacroButton
-                    macro={macro} macroKey={`raw-${a.id}`} label={`${a.name} (raw scores)`}
-                    values={() => gb.students.map((s) => macroValue(idx.get(s.id, a.id), idx.isLate(s.id, a.id), () => formatScore(idx.get(s.id, a.id))))}
-                  />
-                }
               />
             ))}
           </tr>
@@ -270,9 +273,10 @@ export function PowerSchoolGrid({ gb, macro, onStudent }: { gb: CourseGradebook;
                 key={a.id} gb={gb} a={a} empty={emptyCount(a.id)} widths={widths}
                 macro={
                   <MacroButton
-                    macro={macro} macroKey={`ps-${a.id}`} label={`${a.name} (PowerSchool grades)`}
+                    macro={macro} macroKey={`ps-${a.id}`} label={`${a.name} (PowerSchool grades)`} stems={a.stemIds.length}
+                    disabledReason={emptyCount(a.id) ? 'Enter a score, M or E for every student before typing this assignment.' : null}
                     values={() => gb.students.map((s) => {
-                      const score = idx.get(s.id, a.id)
+                      const score = idx.get(s.id, a.id)!  // The button is disabled while any cell is empty.
                       return macroValue(score, idx.isLate(s.id, a.id), () => formatGradeLate(toPowerSchoolGrade(score, a.maxPoints), false))
                     })}
                   />

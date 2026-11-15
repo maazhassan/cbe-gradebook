@@ -1010,3 +1010,11 @@ button.link.student-link:hover {
   color: var(--accent);
   text-decoration: underline;
 }
+
+.editable-score {
+  cursor: text;
+}
+.editable-score:hover,
+.editable-score:focus-visible {
+  background: var(--hover, rgba(127, 127, 127, 0.12));
+}

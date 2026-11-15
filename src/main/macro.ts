@@ -10,23 +10,27 @@ import { AppError } from './db/connection'
 import type { MacroArmed, MacroEvent } from '@shared/types'
 
 /**
- * "Type a column into another app": the renderer arms a list of values, the user switches to a browser and presses
- * the hotkey, and we type each value followed by Enter (no Enter after the last). The hotkey is registered only
- * while armed, and is released when it fires, when the timeout passes, or when the user cancels.
+ * "Type an assignment into another app": the renderer arms one PowerSchool grade per student, the user clicks the
+ * top-left cell of the PowerTeacher sheet and presses the hotkey, and we fill in the whole sheet using only typing,
+ * Enter and the arrow keys. The hotkey is registered only while armed, and is released when it fires, when the
+ * timeout passes, or when the user cancels.
  *
- * A value ending in "L" is a late score ("26L"). PowerTeacher takes that in two steps: type the score and press Enter,
- * press Up to return to the cell, then type "la" (the usual Enter after the value then confirms it). Enter does nothing
- * on the last row, so a late last value uses arrow keys instead (leaving a cell that way commits it, like Enter):
- * score, Up, Down, "la", Up.
+ * The sheet has one row per student and (stems + 1) columns. The first column is the "collected" marker ("co", left
+ * blank for a missing assignment); every other column holds the same grade.
+ *
+ * A value ending in "L" is a late score ("3L"); "MI" is a missing score, entered as the grade 1 with a marker. In both
+ * cases PowerTeacher takes the grade and the marker in two steps: type the grade and press Enter, press Up to return to
+ * the cell, then type the marker ("la" / "mi"). Enter does nothing on the last row, so there we use arrow keys
+ * instead (leaving a cell that way commits it, like Enter): grade, Up, Down, marker.
  */
 
 export const MACRO_ACCELERATOR = 'CommandOrControl+Alt+Shift+G'
 const ARM_TIMEOUT_MS = 60_000
 /** Pause between entries so the web page can move focus to the next field after Enter. */
-const ENTRY_DELAY_MS = 120
+const ENTRY_DELAY_MS = 80
 const run = promisify(execFile)
 
-let armed: { values: string[]; label: string; timer: NodeJS.Timeout; target: WebContents } | null = null
+let armed: { values: string[]; stems: number; label: string; timer: NodeJS.Timeout; target: WebContents } | null = null
 let typing = false
 
 const LINUX_APP_ID = 'cbe-gradebook'
@@ -81,7 +85,7 @@ function send(target: WebContents, event: MacroEvent): void {
 
 /**
  * On Linux the hotkey stays registered once bound: Chromium's Wayland portal backend binds the first registration
- * but never fires again after an unregister/register cycle. The handler ignores presses unless a column is armed,
+ * but never fires again after an unregister/register cycle. The handler ignores presses unless an assignment is armed,
  * so each arm still types at most once. macOS registers only while armed, so the key isn't taken from other apps.
  */
 const KEEP_HOTKEY_REGISTERED = process.platform === 'linux'
@@ -108,7 +112,7 @@ function onHotkey(): void {
   if (!current) return
   disarmMacro()
   typing = true
-  typeValues(current.values)
+  typeSheet(buildSteps(current.values, current.stems))
     .then(() => send(current.target, { kind: 'done', label: current.label, count: current.values.length }))
     .catch((error: unknown) => {
       console.error('[macro]', error)
@@ -126,9 +130,9 @@ export function cancelMacro(): void {
   if (!typing) stopYdotoold()
 }
 
-export function armMacro(values: string[], label: string, target: WebContents): MacroArmed {
-  if (typing) throw new AppError('Still typing the previous column. Wait for it to finish.')
-  if (values.length === 0) throw new AppError('There are no students in this column.')
+export function armMacro(values: string[], stems: number, label: string, target: WebContents): MacroArmed {
+  if (typing) throw new AppError('Still typing the previous assignment. Wait for it to finish.')
+  if (values.length === 0) throw new AppError('There are no students in this assignment.')
   if (process.platform === 'darwin' && !systemPreferences.isTrustedAccessibilityClient(true)) {
     throw new AppError(
       'CBE Gradebook needs Accessibility permission to type into other apps. Allow it in System Settings → Privacy & Security → Accessibility, then try again.'
@@ -146,7 +150,7 @@ export function armMacro(values: string[], label: string, target: WebContents): 
     stopYdotoold()
     if (current) send(current.target, { kind: 'expired', label: current.label })
   }, ARM_TIMEOUT_MS)
-  armed = { values, label, timer, target }
+  armed = { values, stems, label, timer, target }
   return { accelerator: MACRO_ACCELERATOR, expiresAt: Date.now() + ARM_TIMEOUT_MS, count: values.length }
 }
 
@@ -169,13 +173,45 @@ function typingErrorMessage(error: unknown): string {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const LATE_VALUE = /^(.+)L$/
-const LATE_TEXT = 'la'
+type Key = 'Enter' | 'Up' | 'Down' | 'Left' | 'Right'
+type Step = { text: string } | { key: Key }
 
-async function typeValues(values: string[]): Promise<void> {
-  if (process.platform === 'darwin') return typeMac(values)
+const COLLECTED_TEXT = 'co'
+const LATE_TEXT = 'la'
+const MISSING_TEXT = 'MI'
+const LATE_VALUE = /^(.+)L$/
+
+/** The keystrokes for one grade cell, leaving the cursor in that cell with its edit not yet committed. */
+function cellSteps(value: string, lastRow: boolean): Step[] {
+  const late = LATE_VALUE.exec(value)
+  const [grade, marker] = late ? [late[1]!, LATE_TEXT] : value === 'MI' ? ['1', MISSING_TEXT] : [value, null]
+  if (marker === null) return [{ text: grade }]
+  return lastRow
+    ? [{ text: grade }, { key: 'Up' }, { key: 'Down' }, { text: marker }]
+    : [{ text: grade }, { key: 'Enter' }, { key: 'Up' }, { text: marker }]
+}
+
+/** Row by row: the collected marker, then the grade once per stem, then back to the first column of the next row. */
+function buildSteps(values: string[], stems: number): Step[] {
+  const steps: Step[] = []
+  values.forEach((value, row) => {
+    const lastRow = row === values.length - 1
+    if (value !== 'MI') steps.push({ text: COLLECTED_TEXT })
+    for (let i = 0; i < stems; i++) {
+      steps.push({ key: 'Right' }, ...cellSteps(value, lastRow))
+    }
+    if (!lastRow) {
+      steps.push({ key: 'Down' })
+      for (let i = 0; i < stems; i++) steps.push({ key: 'Left' })
+    }
+  })
+  return steps
+}
+
+async function typeSheet(steps: Step[]): Promise<void> {
+  if (process.platform === 'darwin') return typeMac(steps)
   if (process.platform === 'linux') {
-    return usesYdotool() ? typeYdotool(values) : typeXdotool(values)
+    return usesYdotool() ? typeYdotool(steps) : typeXdotool(steps)
   }
   throw new AppError('Typing into other apps is only supported on macOS and Linux.')
 }
@@ -188,65 +224,37 @@ const MAC_SCRIPT = `
 ObjC.import('AppKit');
 function run(argv) {
   const delay_ = Number(argv[0]) / 1000;
-  const values = argv.slice(1);
+  const steps = argv.slice(1);
   const mods = 0x1E0000; // Shift | Control | Option | Command
   for (let i = 0; i < 150 && ($.NSEvent.modifierFlags & mods); i++) delay(0.02);
   delay(0.05);
   const se = Application('System Events');
-  values.forEach((v, i) => {
-    if (v.endsWith('L') && i === values.length - 1) {
-      se.keystroke(v.slice(0, -1)); se.keyCode(126); delay(delay_);
-      se.keyCode(125); delay(delay_);
-      se.keystroke('la'); se.keyCode(126);
-    } else if (v.endsWith('L')) {
-      se.keystroke(v.slice(0, -1)); se.keyCode(36); delay(delay_);
-      se.keyCode(126); delay(delay_); // Up arrow: back to the cell just entered
-      se.keystroke('la');
-    } else {
-      se.keystroke(v);
-    }
-    if (i < values.length - 1) { se.keyCode(36); delay(delay_); }
+  steps.forEach((step) => {
+    if (step[0] === 't') se.keystroke(step.slice(1));
+    else se.keyCode(Number(step.slice(1)));
+    delay(delay_);
   });
 }`
 
-async function typeMac(values: string[]): Promise<void> {
-  await run('osascript', ['-l', 'JavaScript', '-e', MAC_SCRIPT, String(ENTRY_DELAY_MS), ...values], { timeout: 120_000 })
+const MAC_KEYCODES: Record<Key, number> = { Enter: 36, Left: 123, Right: 124, Down: 125, Up: 126 }
+
+async function typeMac(steps: Step[]): Promise<void> {
+  const args = steps.map((step) => ('text' in step ? `t${step.text}` : `k${MAC_KEYCODES[step.key]}`))
+  await run('osascript', ['-l', 'JavaScript', '-e', MAC_SCRIPT, String(ENTRY_DELAY_MS), ...args], { timeout: 600_000 })
 }
 
 /** X11: --clearmodifiers temporarily lifts the still-held hotkey modifiers. */
-async function typeXdotool(values: string[]): Promise<void> {
-  const type = (text: string) => run('xdotool', ['type', '--clearmodifiers', '--delay', '12', '--', text])
-  const press = (key: string) => run('xdotool', ['key', '--clearmodifiers', key])
-  for (const [i, v] of values.entries()) {
-    const late = LATE_VALUE.exec(v)
-    if (late && i === values.length - 1) {
-      await type(late[1]!)
-      await press('Up')
-      await sleep(ENTRY_DELAY_MS)
-      await press('Down')
-      await sleep(ENTRY_DELAY_MS)
-      await type(LATE_TEXT)
-      await press('Up')
-    } else if (late) {
-      await type(late[1]!)
-      await press('Return')
-      await sleep(ENTRY_DELAY_MS)
-      await press('Up')
-      await sleep(ENTRY_DELAY_MS)
-      await type(LATE_TEXT)
-    } else {
-      await type(v)
-    }
-    if (i < values.length - 1) {
-      await press('Return')
-      await sleep(ENTRY_DELAY_MS)
-    }
+async function typeXdotool(steps: Step[]): Promise<void> {
+  for (const step of steps) {
+    if ('text' in step) await run('xdotool', ['type', '--clearmodifiers', '--delay', '12', '--', step.text])
+    else await run('xdotool', ['key', '--clearmodifiers', step.key === 'Enter' ? 'Return' : step.key])
+    await sleep(ENTRY_DELAY_MS)
   }
 }
 
 /**
  * Wayland has no API for synthetic input into other apps, so we use ydotool, which types through a virtual keyboard
- * (/dev/uinput). Rather than relying on a system ydotoold service, we run our own private daemon while a column is
+ * (/dev/uinput). Rather than relying on a system ydotoold service, we run our own private daemon while an assignment is
  * armed. That works without joining the `input` group because logind grants the logged-in user an ACL on
  * /dev/uinput.
  */
@@ -285,7 +293,9 @@ function stopYdotoold(): void {
   rmSync(YDOTOOL_SOCKET, { force: true })
 }
 
-async function typeYdotool(values: string[]): Promise<void> {
+const YDOTOOL_KEYCODES: Record<Key, number> = { Enter: 28, Up: 103, Left: 105, Right: 106, Down: 108 } // Linux input keycodes
+
+async function typeYdotool(steps: Step[]): Promise<void> {
   // Held modifiers can't be detected or cleared on Wayland, so give the user a moment to let go of the hotkey.
   await sleep(600)
   for (let i = 0; i < 20 && daemon && !daemon.error && !existsSync(YDOTOOL_SOCKET); i++) await sleep(100)
@@ -293,32 +303,12 @@ async function typeYdotool(values: string[]): Promise<void> {
   if (daemon.error) throw new AppError(daemon.error)
   if (!existsSync(YDOTOOL_SOCKET)) throw new AppError('Typing failed: ydotoold did not start in time.')
   const options = { env: { ...process.env, YDOTOOL_SOCKET } }
-  const type = (text: string) => run('ydotool', ['type', '--key-delay', '12', '--', text], options)
-  const [KEY_ENTER, KEY_UP, KEY_DOWN] = [28, 103, 108] // Linux input keycodes
-  const press = (code: number) => run('ydotool', ['key', `${code}:1`, `${code}:0`], options)
-  for (const [i, v] of values.entries()) {
-    const late = LATE_VALUE.exec(v)
-    if (late && i === values.length - 1) {
-      await type(late[1]!)
-      await press(KEY_UP)
-      await sleep(ENTRY_DELAY_MS)
-      await press(KEY_DOWN)
-      await sleep(ENTRY_DELAY_MS)
-      await type(LATE_TEXT)
-      await press(KEY_UP)
-    } else if (late) {
-      await type(late[1]!)
-      await press(KEY_ENTER)
-      await sleep(ENTRY_DELAY_MS)
-      await press(KEY_UP)
-      await sleep(ENTRY_DELAY_MS)
-      await type(LATE_TEXT)
-    } else {
-      await type(v)
+  for (const step of steps) {
+    if ('text' in step) await run('ydotool', ['type', '--key-delay', '12', '--', step.text], options)
+    else {
+      const code = YDOTOOL_KEYCODES[step.key]
+      await run('ydotool', ['key', `${code}:1`, `${code}:0`], options)
     }
-    if (i < values.length - 1) {
-      await press(KEY_ENTER)
-      await sleep(ENTRY_DELAY_MS)
-    }
+    await sleep(ENTRY_DELAY_MS)
   }
 }

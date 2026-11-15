@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { ScoreIndex, daysLate, formatAverage, formatDaysLate, formatDueDate, formatGrade, formatNumber, stemAveragesForStudent, toPowerSchoolGrade } from '@shared/grading'
+import type { Score } from '@shared/grading'
 import type { GradebookAssignment, StudentDashboard } from '@shared/types'
 import type { Navigate } from '../App'
 import { errorMessage, getAssignmentOrder, sortAssignments } from '../hooks'
+import { ScoreCell } from './Grids'
 import { useStatus } from './Status'
 
 const marked = (assignments: GradebookAssignment[], idx: ScoreIndex, studentId: number, mark: 'M' | 'E'): GradebookAssignment[] =>
@@ -61,10 +64,45 @@ function LateList({ items, idx, studentId, editable, onChanged }: {
   )
 }
 
-/** Grades for every course the student is or was in. Uses the same grading functions as the gradebook. Only late submission dates can be edited here. */
+/** The Score column cell: badges and "x / max" until clicked, then the same input the gradebook grids use. */
+function EditableScore({ score, late, assignment, label, editable, onSave }: {
+  score: Score | null
+  late: boolean
+  assignment: GradebookAssignment
+  label: string
+  editable: boolean
+  onSave: (value: Score | null, late: boolean) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  if (editing) {
+    return <ScoreCell value={score} late={late} max={assignment.maxPoints} label={label} row={-1} col={-1} readOnly={!editable} onCommit={onSave} autoFocus onFinish={() => setEditing(false)} />
+  }
+  return (
+    <td
+      className={editable ? 'editable-score' : undefined}
+      tabIndex={editable ? 0 : undefined}
+      title={editable ? 'Click to edit the score' : undefined}
+      onClick={() => editable && setEditing(true)}
+      onKeyDown={(e) => {
+        if (editable && e.key === 'Enter') {
+          e.preventDefault()
+          setEditing(true)
+        }
+      }}
+    >
+      {score === null ? <span className="muted">Not yet graded</span>
+        : score === 'M' ? <span className="is-missing mark-tag">Missing</span>
+        : score === 'E' ? <span className="is-exempt mark-tag">Exempt</span>
+        : <>{formatNumber(score)} / {formatNumber(assignment.maxPoints)}{late && <> <span className="is-late mark-tag">Late</span></>}</>}
+    </td>
+  )
+}
+
+/** Grades for every course the student is or was in. Uses the same grading functions as the gradebook. Only scores and late submission dates can be edited here. */
 export function StudentGrades({ dashboard, navigate, onChanged }: { dashboard: StudentDashboard; navigate: Navigate; onChanged: () => Promise<void> }) {
   const studentId = dashboard.student.id
   const order = getAssignmentOrder()
+  const status = useStatus()
   if (dashboard.courses.length === 0) {
     return <p className="muted">Not enrolled in any course yet.</p>
   }
@@ -100,12 +138,14 @@ export function StudentGrades({ dashboard, navigate, onChanged }: { dashboard: S
                       <tr key={a.id}>
                         <td>{a.name}</td>
                         <td>{formatDueDate(a.dueDate)}</td>
-                        <td>
-                          {score === null ? <span className="muted">Not yet graded</span>
-                            : score === 'M' ? <span className="is-missing mark-tag">Missing</span>
-                            : score === 'E' ? <span className="is-exempt mark-tag">Exempt</span>
-                            : <>{formatNumber(score)} / {formatNumber(a.maxPoints)}{idx.isLate(studentId, a.id) && <> <span className="is-late mark-tag">Late</span></>}</>}
-                        </td>
+                        <EditableScore
+                          score={score}
+                          late={idx.isLate(studentId, a.id)}
+                          assignment={a}
+                          label={`${a.name}, out of ${formatNumber(a.maxPoints)}`}
+                          editable={!c.course.archived}
+                          onSave={(rawScore, late) => status.track(window.api.setRawScore({ assignmentId: a.id, studentId, rawScore, late }).then(onChanged))}
+                        />
                         <td className={grade ? `value-cell g${grade}` : 'value-cell'}>{formatGrade(grade)}</td>
                       </tr>
                     )

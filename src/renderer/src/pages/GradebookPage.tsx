@@ -38,7 +38,7 @@ function useTypingMacro(status: ReturnType<typeof useStatus>): { armed: ArmedMac
     () =>
       window.onMacroEvent((e) => {
         setArmed(null)
-        if (e.kind === 'done') status.notify(`Typed ${e.count} value${e.count === 1 ? '' : 's'} for ${e.label}.`)
+        if (e.kind === 'done') status.notify(`Filled in ${e.count} student${e.count === 1 ? '' : 's'} for ${e.label}.`)
         else if (e.kind === 'expired') status.notify(`Hotkey for ${e.label} expired. Click Type again to re-arm.`)
         else status.fail(e.message)
       }),
@@ -56,9 +56,9 @@ function useTypingMacro(status: ReturnType<typeof useStatus>): { armed: ArmedMac
 
   const controls: MacroControls = {
     armedKey: armed?.key ?? null,
-    onArm: (key, label, values) => {
+    onArm: (key, label, values, stems) => {
       window.api
-        .armTypingMacro({ values, label })
+        .armTypingMacro({ values, stems, label })
         .then((r) => {
           setNow(Date.now())
           setArmed({ ...r, key, label })
@@ -208,10 +208,10 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
         </div>
       )}
       {tab === 'stems' && <p className="tab-note">Read-only. Weighted average of PowerSchool grades per stem (weights are relative); ungraded and exempt work is ignored, missing counts as 0, and blank means nothing graded yet. The CSV export includes both the 2-decimal and the rounded value for each stem.</p>}
-      {macro.armed && (tab === 'raw' || tab === 'ps') && (
+      {macro.armed && tab === 'ps' && (
         <p className="banner macro-banner" role="status">
           <span>
-            <strong>{macro.armed.label}</strong>: {macro.armed.count} values loaded. Click the first field in the browser, then press{' '}
+            <strong>{macro.armed.label}</strong>: {macro.armed.count} student{macro.armed.count === 1 ? '' : 's'} loaded. Click the top-left cell of the sheet in PowerTeacher, then press{' '}
             <kbd>{showAccelerator(macro.armed.accelerator)}</kbd> and let go. Expires in {macro.secondsLeft}s.
           </span>
           <button onClick={macro.controls.onCancel}>Cancel</button>
@@ -235,7 +235,7 @@ export function GradebookPage({ initialCourseId, navigate }: { initialCourseId?:
       )}
       {gb && gb.students.length > 0 && (gb.assignments.length > 0 || tab === 'stems') && (
         <>
-          {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} macro={macro.controls} onStudent={openStudent} />}
+          {tab === 'raw' && <RawScoresGrid gb={gb} readOnly={readOnly} onEditAssignment={setEditing} onSetScore={setScore} onStudent={openStudent} />}
           {tab === 'ps' && <PowerSchoolGrid gb={gb} macro={macro.controls} onStudent={openStudent} />}
           {tab === 'stems' && <StemAveragesGrid gb={gb} decimals={decimals} onStudent={openStudent} />}
         </>
